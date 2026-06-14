@@ -1,0 +1,9 @@
+roslaunch xpkg_demo chassis_rplidar.launch
+roslaunch xpkg_demo chassis_bringup.launch
+roslaunch xpkg_demo chassis_navigation.launch map_file:=/home/pcms/maps/tu_1.yaml
+roslaunch orbbec_camera multi_gemini2.launch 
+roslaunch mr_voice voice.launch
+
+roslaunch open_manipulator_controller open_manipulator_controller.launch 
+roslaunch open_manipulator_control_gui open_manipulator_control_gui.launch 
+
