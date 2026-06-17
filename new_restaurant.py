@@ -391,13 +391,11 @@ if __name__ == "__main__":
                 yn = 0
                 start_time = time.time()
                 speak("answer it after the")
-                song = AudioSegment.from_wav("/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.wav")
-                play(song)
+                playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
                 speak("sound")
                 time.sleep(2)
-                song = AudioSegment.from_wav(
-                    "/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.wav")
-                play(song)
+                playsound(
+                    '/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
                 try:
                     recording = sd.rec(int(RECORD_SECONDS * SAMPLE_RATE),
                                        samplerate=SAMPLE_RATE,
