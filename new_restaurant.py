@@ -6,6 +6,8 @@ import cv2, os
 from pcms.pytorch_models import *
 from pcms.openvino_models import Yolov8, HumanPoseEstimation
 import numpy as np
+
+import subprocess
 from geometry_msgs.msg import Twist
 import math
 import time
@@ -26,9 +28,7 @@ import speech_recognition as sr
 import json
 import os
 from datetime import datetime
-from pydub import AudioSegment
-from pydub.playback import play
-
+import base64
 def callback_image1(msg):
     global _frame1
     _frame1 = CvBridge().imgmsg_to_cv2(msg, "bgr8")
@@ -112,18 +112,6 @@ def move(forward_speed: float = 0, turn_speed: float = 0):
     _cmd_vel.publish(msg)
 
 
-def post_message_request(step, s1, question):
-    api_url = "http://172.20.10.5:8888/Fambot"
-    my_todo = {"Question1": "None",
-               "Question2": "None",
-               "Question3": "None",
-               "Steps": step,
-               "Voice": s1,
-               "Questionasking": question,
-               "answer": "None"}
-    response = requests.post(api_url, json=my_todo, timeout=20)
-    result = response.json()
-    return result
 
 
 def callback_voice(msg):
@@ -132,11 +120,13 @@ def callback_voice(msg):
 
 API_KEY = "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"
 MODEL = "xiaomi/mimo-v2.5"
-AUDIO_PATH = r"C:\Users\rayso\Desktop\python\recording_2s.wav"
+AUDIO_PATH = "/home/pcms/catkin_ws/src/beginner_tutorials/src/recording_2s.wav"
 
 SAMPLE_RATE = 44100
-RECORD_SECONDS = 5  # 聽訂單建議可以改長一點，例如 5 秒或 10 秒
-DEVICE_ID = 1
+RECORD_SECONDS = 5  # 錄音時間（秒）
+
+# 🎯 改用 pulse，這會直接連動你在 Linux 系統設定裡選擇的預設麥克風
+ALSA_DEVICE = "pulse"
 
 
 # ================= 功能函式 =================
@@ -155,10 +145,9 @@ def call_ai_api(a):
                 "You are an expert order-taking assistant. The provided audio is a recording of a customer placing an order, "
                 "but it contains a lot of noisy background sounds. Please perform the following tasks:\n"
                 "1. Ignore all background noise, wind, music, or chimes.\n"
-                "2. Listen closely to the human voice and transcribe exactly what the customer said (in the language they spoke, e.g., Cantonese, English, or Mandarin).\n"
-                "3. Clearly list what the customer NEEDS (items, quantity, special requests, or questions they asked).\n"
-                "Provide the output in a clear, bulleted format, no extra information required to answer, just want the audience want.\n"
-                "answer example: a apple and a coffee"
+                "2. Listen closely to the human voice and transcribe exactly what the customer said (in the language they spoke,  English).\n"
+                "answer in in ths fomat for example: a apple and a coffee, just give me one sentence\n"
+                "if nothing in the audio answer: nothing"
             )
         else:
             optimized_prompt='''now the customer are answering my question, there is only three possible answer in this audio
@@ -251,8 +240,9 @@ if __name__ == "__main__":
     print("sever2")
     step = "none"
     confirm_command = 0
-    for i in range(55):
-        move(0, -0.2)
+    #left positive
+    for i in range(35):
+        move(0, 0.2)
         time.sleep(0.125)
     nigga_meter = 2000
     for iii in range(round(nigga_meter / 100)):
@@ -397,21 +387,27 @@ if __name__ == "__main__":
                 playsound(
                     '/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
                 try:
-                    recording = sd.rec(int(RECORD_SECONDS * SAMPLE_RATE),
-                                       samplerate=SAMPLE_RATE,
-                                       channels=1,
-                                       device=DEVICE_ID,
-                                       dtype='float32')
-                    sd.wait()
-                    print("record end！")
+                    cmd = [
+                        "arecord",
+                        "-D", ALSA_DEVICE,
+                        "-d", str(RECORD_SECONDS),
+                        "-f", "S16_LE",
+                        "-r", str(SAMPLE_RATE),
+                        "-c", "1",
+                        AUDIO_PATH
+                    ]
 
-                    sf.write(AUDIO_PATH, recording, SAMPLE_RATE)
+                    # 這裡移除了 stderr=subprocess.DEVNULL，如果出錯會噴出最底層的 arecord 原因
+                    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+                    print("⏹️ 錄音結束！")
                     data = call_ai_api(1)
+                    if "Nothing" not in data or "nothing" not in data:
+                        step_action =99
 
                 except Exception as e:
                     print(f"\n執行失敗: {e}")
                     step_action = 100
-                if abs((start_time - time.time())) >= 15:
+                if abs((start_time - time.time())) >= 30:
                     speak("I can't get it, I gonna go back now")
                     time.sleep(3)
                     for walk in range(round(meter / 100)):
@@ -431,28 +427,8 @@ if __name__ == "__main__":
                 speak(final_speak_to_guest)
                 print("********************")
                 speak("plase answer robot yes or robot no thank you")
-                try:
-                    recording = sd.rec(int(RECORD_SECONDS * SAMPLE_RATE),
-                                       samplerate=SAMPLE_RATE,
-                                       channels=1,
-                                       device=DEVICE_ID,
-                                       dtype='float32')
-                    sd.wait()
-                    print("record end！")
-
-                    sf.write(AUDIO_PATH, recording, SAMPLE_RATE)
-                    data2 = call_ai_api(2)
-
-                except Exception as e:
-                    print(f"\n執行失敗: {e}")
-                    step_action = 100
-                step_action = 7
-            if step_action == 7:
-                if "yes" in data2:
-                    speak("I got it")
-                    step_action = 9
-                if "no" in data2:
-                    step_action = 2
+  
+                step_action = 9
             if step_action == 9:
                 time.sleep(3)
                 for walk in range(round(meter / 100)):
@@ -463,7 +439,7 @@ if __name__ == "__main__":
                 time.sleep(2)
                 step_action = 10
             if step_action == 10:
-                speak("dear bar man please put all the stuff inside the box of my hand in 30 seconds, thank you")
+                speak("dear bar man please put all the stuff inside my head head head in 30 seconds, thank you")
                 time.sleep(20)
                 speak("5")
                 speak("4")
@@ -471,7 +447,7 @@ if __name__ == "__main__":
                 speak("2")
                 speak("1")
                 speak("I gonna move")
-
+                move(0,0)
                 for walk in range(round((meter - 300) / 100)):
                     move(0.2, 0)
                     time.sleep(0.5)
