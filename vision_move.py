@@ -10,6 +10,7 @@ from RobotChassis import RobotChassis
 from tf.transformations import euler_from_quaternion
 import numpy as np
 import math
+from std_srvs.srv import Empty
 import os
 
 _image = None
@@ -46,7 +47,7 @@ def move(dis, turn):
     fb.linear.x = dis
     fb.angular.z = turn
     pub_cmd.publish(fb)
-
+ 
 
 def get_yaw_from_odom():
     global _odom
@@ -112,18 +113,18 @@ if __name__ == "__main__":
     rospy.loginfo("Node started")
     rate = rospy.Rate(20)
 
-    rospy.Subscriber("/cam1/color/image_raw", Image, callback_image)
-    rospy.Subscriber("/cam1/depth/image_raw", Image, callback_depth)
+    rospy.Subscriber("/camera/color/image_raw", Image, callback_image)
+    rospy.Subscriber("/camera/depth/image_raw", Image, callback_depth)
     rospy.Subscriber("/odom", Odometry, callback_odom)
 
     pub_cmd = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
 
     chassis = RobotChassis()
-
+    clear_costmaps = rospy.ServiceProxy("/move_base/clear_costmaps", Empty)
     state = 0
     start_pos = None
     human_pos = None
-    target_cx = w // 2
+    target_cx = 640 // 2
 
     say("Demo start.")
 
@@ -142,7 +143,7 @@ if __name__ == "__main__":
             start_pos = get_pos()
             state = 1
 
-        elif state == 1:
+        if state == 1:
             poses = net_pose.forward(image)
             found_target = False
 
@@ -167,7 +168,7 @@ if __name__ == "__main__":
                             cv2.circle(image, p5, 5, (0, 0, 255), -1)
                             cv2.circle(image, p6, 5, (0, 0, 255), -1)
                             cv2.circle(image, (cx, cy), 5, (0, 255, 0), -1)
-                            cv2.imwrite("image/proof1.jpg", image)
+                            cv2.imwrite("/home/pcms/catkin_ws/src/beginner_tutorials/src/proof1.jpg", image)
                             
                             target_cx = cx
                             say("Found customer waving hand")
@@ -178,7 +179,7 @@ if __name__ == "__main__":
             if found_target:
                 continue
 
-        elif state == 2:
+        if state == 2:
             poses = net_pose.forward(image)
             if len(poses) > 0:
                 p5 = list(map(int, poses[0][5][:2]))
@@ -186,74 +187,32 @@ if __name__ == "__main__":
                 target_cx = (p5[0] + p6[0]) // 2
 
             image_mid = w // 2
-            diff = 25
+            diff = 15
 
             if image_mid - diff <= target_cx <= image_mid + diff:
                 say("Facing the customer")
                 state = 3
             else:
+                h, w, c = image.shape
+                e = w // 2 - cx
+                v = 0.001 * e
                 if target_cx > image_mid:
-                    turn(-10 / 180 * np.pi)
+                    v = min(v, 0.45)
                 else:
-                    turn(10 / 180 * np.pi)
+                    v = max(v, -0.45)
+                move(0, v)
 
-        elif state == 3:
+        if state == 3:
             navigation_success = False
-
-            for attempt in range(2):
-                human_depth = depth[h // 2][w // 2]
-                safe_distance = 0.8
-
-                if human_depth > safe_distance and np.isfinite(human_depth):
-                    base_theta = normalize_angle(get_yaw_from_odom())
-                    robotx, roboty = get_pos()
-                    target_depth = human_depth - safe_distance
-                    num_steps = 3
-
-                    angle_offsets = [0.0, 15.0 / 180.0 * np.pi, -15.0 / 180.0 * np.pi]
-
-                    for offset in angle_offsets:
-                        current_theta = normalize_angle(base_theta + offset)
-                        waypoints = []
-
-                        for i in range(1, num_steps + 1):
-                            step_depth = (target_depth / num_steps) * i
-                            step_x = robotx + step_depth * np.cos(current_theta)
-                            step_y = roboty + step_depth * np.sin(current_theta)
-                            waypoints.append((step_x, step_y))
-
-                        path_blocked = False
-                        for point in waypoints:
-                            chassis.move_to(*point, 0)
-                            if chassis.status_code == 0 or chassis.status_code == 4:
-                                path_blocked = True
-                                break
-
-                        if not path_blocked:
-                            navigation_success = True
-                            break
-                        else:
-                            print(f"Path with offset {offset} failed. Trying another route.")
-
-                    if navigation_success:
-                        break
-                    elif attempt == 0:
-                        say("Path blocked. Shifting position to retry calculation.")
-                        turn(30.0 / 180.0 * np.pi)
-                        rospy.sleep(1.0)
-                        
-                        if _image is not None and _depth is not None:
-                            image = _image.copy()
-                            depth = _depth.copy()
-                else:
-                    print("Error: check depth or distance")
-                    break
-
-            if navigation_success:
-                say("Arrived safely in front of the customer")
-                break
-            else:
-                say("All fallback paths failed twice. Looking for a new customer.")
+            clear_costmaps
+            human_depth = depth[h//2][w//2]/1000
+            theta = normalize_angle(get_yaw_from_odom())     # 0度夾角
+            robotx, roboty = get_pos()    # robot position
+            
+            human_pos = (robotx + human_depth*np.cos(theta), roboty + human_depth*np.sin(theta))
+            print(human_pos)
+            chassis.move_to(*human_pos, 0)
+            if chassis.status_code == 3:
                 state = 1
 
         cv2.imshow("frame", image)
