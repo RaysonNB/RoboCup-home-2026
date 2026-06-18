@@ -122,6 +122,7 @@ if __name__ == "__main__":
     chassis = RobotChassis()
     clear_costmaps = rospy.ServiceProxy("/move_base/clear_costmaps", Empty)
     state = 0
+    step =0 
     start_pos = None
     human_pos = None
     target_cx = 640 // 2
@@ -140,7 +141,8 @@ if __name__ == "__main__":
 
         if state == 0:
             say("mission start")
-            start_pos = get_pos()
+            startx,starty = get_pos()
+            theta0 = normalize_angle(get_yaw_from_odom()) 
             state = 1
 
         if state == 1:
@@ -205,15 +207,43 @@ if __name__ == "__main__":
         if state == 3:
             navigation_success = False
             clear_costmaps
-            human_depth = depth[h//2][w//2]/1000
-            theta = normalize_angle(get_yaw_from_odom())     # 0度夾角
+            human_depth = depth[h//2][w//2]/1000.0
+            theta_person= normalize_angle(get_yaw_from_odom())
+            theta = theta_person-theta0
+            print("angle between initial:",theta)# 0度夾角
             robotx, roboty = get_pos()    # robot position
-            
             human_pos = (robotx + human_depth*np.cos(theta), roboty + human_depth*np.sin(theta))
-            print(human_pos)
-            chassis.move_to(*human_pos, 0)
-            if chassis.status_code == 3:
-                state = 1
+            print("position", human_pos)
+            state=1 #change
+        if state==4:
+            chassis.move_to(*human_pos, theta_person)
+            while not rospy.is_shutdown():
+                # 4. Get the chassis status.
+                code = chassis.status_code
+                text = chassis.status_text
+                if code == 3:
+                    step=1
+                    break
+                if code == 4:
+                    step=-1
+                    break
+                if code == 0:
+                    step=-1
+                    break 
+            if step==-1:
+                chassis.move_to(startx,starty,0)
+                while not rospy.is_shutdown():
+                    # 4. Get the chassis status.
+                    code = chassis.status_code
+                    text = chassis.status_text
+                    if code == 3:
+                        step=1
+                        break
+                    if code == 4:
+                        break
+                    if code == 0:
+                        break 
+                step=0
 
         cv2.imshow("frame", image)
         if cv2.waitKey(1) & 0xFF == ord('q'):
