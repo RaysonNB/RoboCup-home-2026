@@ -19,7 +19,23 @@ def enable_amcl_alignment():
     except rospy.ROSException:
         rospy.logerr("無法連接到 AMCL 節點，請檢查 AMCL 是否有啟動！")
 
+import math
 
+def calculate_rotation(x1, y1, z1, x2, y2):
+    dx = x2 - x1
+    dy = y2 - y1
+    target_angle = math.atan2(dy, dx)
+    diff = target_angle - z1
+    diff = (diff + math.pi) % (2 * math.pi) - math.pi
+    
+    return diff
+
+x1, y1, z1 = 0, 0, 0  # 當前在原點，面向右 (0弧度)
+x2, y2 = 1, 1        # 目標在右上角
+
+rotation = calculate_rotation(x1, y1, z1, x2, y2)
+print(f"需要轉動弧度: {rotation:.4f}")
+print(f"需要轉動角度: {math.degrees(rotation):.2f} 度")
 # ==========================================================
 # 測試用 Main 流程
 # ==========================================================
