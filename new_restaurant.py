@@ -397,7 +397,6 @@ if __name__ == "__main__":
                         AUDIO_PATH
                     ]
 
-                    # 這裡移除了 stderr=subprocess.DEVNULL，如果出錯會噴出最底層的 arecord 原因
                     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
                     print("⏹️ 錄音結束！")
                     data = call_ai_api(1)
