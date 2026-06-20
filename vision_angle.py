@@ -22,7 +22,7 @@ def angle_between(x1, y1, z1_rad, x2, y2):
     dx = x2 - x1
     dy = y2 - y1
     target_angle_rad = math.atan2(dy, dx)
-    diff_rad = target_angle_rad - z1_rad
+    diff_rad = target_angle_rad
     return normalize_angle(diff_rad)
 
 
@@ -134,7 +134,7 @@ def get_map_coords(target_angle, dist_meters, cx=None, img_width=640):
         total_yaw = target_angle * np.pi / 180
 
         target_x = trans[0] + dist_meters
-        target_y = trans[1] + dist_meters / np.tan(total_yaw)
+        target_y = trans[1] + dist_meters * np.tan(total_yaw)
         return target_x, target_y, robot_yaw
     except Exception as e:
         rospy.logerr(f"TF Error: {e}")
@@ -207,6 +207,9 @@ if __name__ == "__main__":
     startx, starty, start_yaw = get_map_coords(0, 0)
     print("start:", startx, starty, start_yaw)
     state = 0
+    for i in range(35):
+        move(0, 0.2)
+        time.sleep(0.125)
 
     say("System ready.")
     rate = rospy.Rate(10)
@@ -225,9 +228,10 @@ if __name__ == "__main__":
                     cx, cy = int((p5[0] + p6[0]) / 2), int((p5[1] + p6[1]) / 2)
                     if cy >= _depth.shape[0] or cx >= _depth.shape[1]: continue
                     dist = _depth[cy][cx] / 1000.0
-                    ry, rx, d = get_real_xyz(depth, cx, cy, 2)
-                    print("real factor", ry, rx, d)
-
+                    rx, ry, d = get_real_xyz(depth, cx, cy, 2)
+                    print("real factor", rx, ry, d)
+                    d=d-300
+                    dist=d/1000.0+0.09
                     target_angle = math.atan2(rx, d) * 180 / np.pi
                     print("vision angle", target_angle)
                     if 0.5 < dist < 10.0:
