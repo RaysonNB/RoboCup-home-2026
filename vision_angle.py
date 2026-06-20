@@ -23,7 +23,8 @@ def angle_between(x1, y1, z1_rad, x2, y2):
     dx = x2 - x1
     dy = y2 - y1
     target_angle_rad = math.atan2(dy, dx)
-    diff_rad = target_angle_rad - (z1_rad-start_yaw)
+    diff_rad = target_angle_rad - (z1_rad-start_yaw) 
+    #diff_rad = target_angle_rad - (-z1_rad+start_yaw) 
     return normalize_angle(diff_rad)
 
 
