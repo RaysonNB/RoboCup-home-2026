@@ -21,7 +21,7 @@ import math
 def angle_between(x1, y1, z1_rad, x2, y2):
     dx = x2 - x1
     dy = y2 - y1
-    target_angle_rad = math.atan2(dx, dy)
+    target_angle_rad = math.atan2(dy, dx)
     diff_rad = target_angle_rad - z1_rad
     return normalize_angle(diff_rad)
 
@@ -228,8 +228,7 @@ if __name__ == "__main__":
                     ry, rx, d = get_real_xyz(depth, cx, cy, 2)
                     print("real factor", ry, rx, d)
 
-                    target_angle = math.atan2(rx, ry) * 180 / np.pi
-                    target_angle = np.clip(target_angle, -90.0, 90.0)
+                    target_angle = math.atan2(rx, d) * 180 / np.pi
                     print("vision angle", target_angle)
                     if 0.5 < dist < 10.0:
                         print("Distance to human:", dist)
