@@ -24,12 +24,16 @@ def angle_between(x1, y1, z1_rad, x2, y2):
     target_angle_rad = math.atan2(dx, dy)
     diff_rad = target_angle_rad - z1_rad
     return normalize_angle(diff_rad)
+
+
 def disable_amcl_alignment():
     print("")
 
 
 def enable_amcl_alignment():
     print("")
+
+
 _image = None
 _depth = None
 CvBr = CvBridge()
@@ -116,7 +120,7 @@ def is_waving(pose):
     return None
 
 
-def get_map_coords(target_angle,dist_meters, cx=None, img_width=640):
+def get_map_coords(target_angle, dist_meters, cx=None, img_width=640):
     try:
         (trans, rot) = tf_listener.lookupTransform('/map', '/base_link', rospy.Time(0))
         euler = tf.transformations.euler_from_quaternion(rot)
@@ -127,14 +131,15 @@ def get_map_coords(target_angle,dist_meters, cx=None, img_width=640):
             center_x = img_width / 2.0
             angle_offset = -((cx - center_x) / center_x) * (fov_rad / 2.0)
 
-        total_yaw = target_angle*np.pi/180
+        total_yaw = target_angle * np.pi / 180
 
-        target_x = trans[0] + dist_meters 
+        target_x = trans[0] + dist_meters
         target_y = trans[1] + dist_meters / np.tan(total_yaw)
         return target_x, target_y, robot_yaw
     except Exception as e:
         rospy.logerr(f"TF Error: {e}")
         return None, None, None
+
 
 def get_real_xyz(dp, x, y, num):
     a1 = 49.5
@@ -185,6 +190,7 @@ def get_real_xyz(dp, x, y, num):
     real_x = round(x * 2 * d * np.tan(b / 2) / w)
     return real_x, real_y, d
 
+
 if __name__ == "__main__":
     rospy.init_node("robot_navigator_full")
     tf_listener = tf.TransformListener()
@@ -198,7 +204,7 @@ if __name__ == "__main__":
     rospy.sleep(1)
     clear_costmaps = rospy.ServiceProxy("/move_base/clear_costmaps", Empty)
 
-    startx, starty, start_yaw = get_map_coords(0,0)
+    startx, starty, start_yaw = get_map_coords(0, 0)
     print("start:", startx, starty, start_yaw)
     state = 0
 
@@ -209,7 +215,7 @@ if __name__ == "__main__":
         rate.sleep()
         if _image is None or _depth is None: continue
         image = _image.copy()
-        depth=_depth.copy()
+        depth = _depth.copy()
         if state == 0:
             poses = net_pose.forward(image)
             for pose in poses:
@@ -219,22 +225,21 @@ if __name__ == "__main__":
                     cx, cy = int((p5[0] + p6[0]) / 2), int((p5[1] + p6[1]) / 2)
                     if cy >= _depth.shape[0] or cx >= _depth.shape[1]: continue
                     dist = _depth[cy][cx] / 1000.0
-                    ry, rx, d = get_real_xyz(depth, cx, cy,2)
-                    print("real factor",ry, rx, d)
-                    
-                    target_angle = math.atan2(rx, ry)*180/np.pi
-                    if target_angle>90: target_angle=target_angle-180
-                    print("vision angle",target_angle)
+                    ry, rx, d = get_real_xyz(depth, cx, cy, 2)
+                    print("real factor", ry, rx, d)
+
+                    target_angle = math.atan2(rx, ry) * 180 / np.pi
+                    target_angle = np.clip(target_angle, -90.0, 90.0)
+                    print("vision angle", target_angle)
                     if 0.5 < dist < 10.0:
                         print("Distance to human:", dist)
                         img_w = image.shape[1]
-                        hx, hy, _ = get_map_coords(target_angle,dist, cx=cx, img_width=img_w)
+                        hx, hy, _ = get_map_coords(target_angle, dist, cx=cx, img_width=img_w)
                         print("Human map pos:", hx, hy)
-                        x1, y1, z1_rad = get_map_coords(target_angle,0)
+                        x1, y1, z1_rad = get_map_coords(target_angle, 0)
                         rotation = angle_between(x1, y1, z1_rad, hx, hy)
-                        if rotation>3.14/2.0: rotation=rotation-3.14
                         print("Calculated turn rad:", rotation)
-                        print("Calculated turn angle:", rotation*180/np.pi)
+                        print("Calculated turn angle:", rotation * 180 / np.pi)
                         turn(-rotation)
                         time.sleep(5)
 
