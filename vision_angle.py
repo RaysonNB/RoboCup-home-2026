@@ -21,7 +21,7 @@ import math
 def angle_between(x1, y1, z1_rad, x2, y2):
     dx = x2 - x1
     dy = y2 - y1
-    target_angle_rad = math.atan2(dy, dx)
+    target_angle_rad = math.atan2(dx, dy)
     diff_rad = target_angle_rad - z1_rad
     return normalize_angle(diff_rad)
 def disable_amcl_alignment():
@@ -198,7 +198,7 @@ if __name__ == "__main__":
     rospy.sleep(1)
     clear_costmaps = rospy.ServiceProxy("/move_base/clear_costmaps", Empty)
 
-    startx, starty, start_yaw = get_map_coords(0)
+    startx, starty, start_yaw = get_map_coords(0,0)
     print("start:", startx, starty, start_yaw)
     state = 0
 
@@ -215,13 +215,15 @@ if __name__ == "__main__":
             for pose in poses:
                 hand = is_waving(pose)
                 if hand:
-                    say(f"Detected {hand} hand. Moving to customer.")
                     p5, p6 = pose[5], pose[6]
                     cx, cy = int((p5[0] + p6[0]) / 2), int((p5[1] + p6[1]) / 2)
                     if cy >= _depth.shape[0] or cx >= _depth.shape[1]: continue
                     dist = _depth[cy][cx] / 1000.0
                     ry, rx, d = get_real_xyz(depth, cx, cy,2)
-                    target_angle = math.atan2(rx, ry)
+                    print("real factor",ry, rx, d)
+                    
+                    target_angle = math.atan2(rx, ry)*180/np.pi
+                    if target_angle>90: target_angle=target_angle-180
                     print("vision angle",target_angle)
                     if 0.5 < dist < 10.0:
                         print("Distance to human:", dist)
@@ -230,9 +232,11 @@ if __name__ == "__main__":
                         print("Human map pos:", hx, hy)
                         x1, y1, z1_rad = get_map_coords(target_angle,0)
                         rotation = angle_between(x1, y1, z1_rad, hx, hy)
+                        if rotation>3.14/2.0: rotation=rotation-3.14
                         print("Calculated turn rad:", rotation)
                         print("Calculated turn angle:", rotation*180/np.pi)
-                        #turn(rotation)
+                        turn(-rotation)
+                        time.sleep(5)
 
         cv2.imshow("Detection", image)
         if cv2.waitKey(1) & 0xFF == ord('q'): break
