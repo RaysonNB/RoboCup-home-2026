@@ -116,26 +116,74 @@ def is_waving(pose):
     return None
 
 
-def get_map_coords(dist_meters, cx=None, img_width=640):
+def get_map_coords(target_angle,dist_meters, cx=None, img_width=640):
     try:
         (trans, rot) = tf_listener.lookupTransform('/map', '/base_link', rospy.Time(0))
         euler = tf.transformations.euler_from_quaternion(rot)
         robot_yaw = euler[2]
         angle_offset = 0.0
         if cx is not None:
-            fov_rad = math.radians(60) 
+            fov_rad = math.radians(60)
             center_x = img_width / 2.0
             angle_offset = -((cx - center_x) / center_x) * (fov_rad / 2.0)
 
-        total_yaw = robot_yaw + angle_offset
+        total_yaw = target_angle*np.pi/180
 
-        target_x = trans[0] + dist_meters * np.cos(total_yaw)
-        target_y = trans[1] + dist_meters * np.sin(total_yaw)
+        target_x = trans[0] + dist_meters 
+        target_y = trans[1] + dist_meters / np.tan(total_yaw)
         return target_x, target_y, robot_yaw
     except Exception as e:
         rospy.logerr(f"TF Error: {e}")
         return None, None, None
 
+def get_real_xyz(dp, x, y, num):
+    a1 = 49.5
+    b1 = 60.0
+    if num == 2:
+        a1 = 55.0
+        b1 = 86.0
+    a = a1 * np.pi / 180
+    b = b1 * np.pi / 180
+    d = dp[y][x]
+    h, w = dp.shape[:2]
+    if d == 0:
+        for k in range(1, 15, 1):
+            if d == 0 and y - k >= 0:
+                for j in range(x - k, x + k, 1):
+                    if not (0 <= j < w):
+                        continue
+                    d = dp[y - k][j]
+                    if d > 0:
+                        break
+            if d == 0 and x + k < w:
+                for i in range(y - k, y + k, 1):
+                    if not (0 <= i < h):
+                        continue
+                    d = dp[i][x + k]
+                    if d > 0:
+                        break
+            if d == 0 and y + k < h:
+                for j in range(x + k, x - k, -1):
+                    if not (0 <= j < w):
+                        continue
+                    d = dp[y + k][j]
+                    if d > 0:
+                        break
+            if d == 0 and x - k >= 0:
+                for i in range(y + k, y - k, -1):
+                    if not (0 <= i < h):
+                        continue
+                    d = dp[i][x - k]
+                    if d > 0:
+                        break
+            if d > 0:
+                break
+
+    x = int(x) - int(w // 2)
+    y = int(y) - int(h // 2)
+    real_y = round(y * 2 * d * np.tan(a / 2) / h)
+    real_x = round(x * 2 * d * np.tan(b / 2) / w)
+    return real_x, real_y, d
 
 if __name__ == "__main__":
     rospy.init_node("robot_navigator_full")
@@ -161,6 +209,7 @@ if __name__ == "__main__":
         rate.sleep()
         if _image is None or _depth is None: continue
         image = _image.copy()
+        depth=_depth.copy()
         if state == 0:
             poses = net_pose.forward(image)
             for pose in poses:
@@ -171,16 +220,18 @@ if __name__ == "__main__":
                     cx, cy = int((p5[0] + p6[0]) / 2), int((p5[1] + p6[1]) / 2)
                     if cy >= _depth.shape[0] or cx >= _depth.shape[1]: continue
                     dist = _depth[cy][cx] / 1000.0
-
+                    ry, rx, d = get_real_xyz(depth, cx, cy,2)
+                    target_angle = math.atan2(rx, ry)
+                    print("vision angle",target_angle)
                     if 0.5 < dist < 10.0:
                         print("Distance to human:", dist)
                         img_w = image.shape[1]
-                        hx, hy, _ = get_map_coords(dist, cx=cx, img_width=img_w)
+                        hx, hy, _ = get_map_coords(target_angle,dist, cx=cx, img_width=img_w)
                         print("Human map pos:", hx, hy)
-                        x1, y1, z1_rad = get_map_coords(0)
+                        x1, y1, z1_rad = get_map_coords(target_angle,0)
                         rotation = angle_between(x1, y1, z1_rad, hx, hy)
-                        print("Calculated turn angle (rad):", rotation)
-
+                        print("Calculated turn rad:", rotation)
+                        print("Calculated turn angle:", rotation*180/np.pi)
                         #turn(rotation)
 
         cv2.imshow("Detection", image)
