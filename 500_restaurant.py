@@ -1,124 +1,33 @@
 #!/usr/bin/env python3
-import rospy
-from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
-import cv2, os
 from ultralytics import YOLO
 from pcms.pytorch_models import *
 from pcms.openvino_models import Yolov8, HumanPoseEstimation
 import subprocess
-from geometry_msgs.msg import Twist
-import math
-import time
-import re
 from mr_voice.msg import Voice
-from std_msgs.msg import String
-from rospkg import RosPack
-from tf.transformations import euler_from_quaternion
-from sensor_msgs.msg import Imu
-from typing import Tuple, List
-from RobotChassis import RobotChassis
-import datetime
-from std_srvs.srv import Empty
-from gtts import gTTS
 from playsound import playsound
 import requests
-import speech_recognition as sr
-import json
-import os
 from datetime import datetime
 import base64
 import rospy
 import tf
 import cv2
-import numpy as np
-import time
 import os
 from tf.transformations import euler_from_quaternion
-
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Image
-from std_srvs.srv import Empty
 from geometry_msgs.msg import Twist
 from cv_bridge import CvBridge
-from pcms.openvino_models import HumanPoseEstimation
 from RobotChassis import RobotChassis
-import dynamic_reconfigure.client
-import math
 import time
 from piper_sdk import *
 import numpy as np
-import matplotlib.pyplot as plt
-import random
 import json
-
-
 def callback_image1(msg):
     global _frame1
     _frame1 = CvBridge().imgmsg_to_cv2(msg, "bgr8")
-
-
 def callback_depth1(msg):
     global _depth1
     _depth1 = CvBridge().imgmsg_to_cv2(msg, "passthrough")
-
-
-def get_real_xyz(dp, x, y, num):
-    a1 = 49.5
-    b1 = 60.0
-    if num == 2:
-        a1 = 55.0
-        b1 = 86.0
-    a = a1 * np.pi / 180
-    b = b1 * np.pi / 180
-    d = dp[y][x]
-    h, w = dp.shape[:2]
-    if d == 0:
-        for k in range(1, 15, 1):
-            if d == 0 and y - k >= 0:
-                for j in range(x - k, x + k, 1):
-                    if not (0 <= j < w):
-                        continue
-                    d = dp[y - k][j]
-                    if d > 0:
-                        break
-            if d == 0 and x + k < w:
-                for i in range(y - k, y + k, 1):
-                    if not (0 <= i < h):
-                        continue
-                    d = dp[i][x + k]
-                    if d > 0:
-                        break
-            if d == 0 and y + k < h:
-                for j in range(x + k, x - k, -1):
-                    if not (0 <= j < w):
-                        continue
-                    d = dp[y + k][j]
-                    if d > 0:
-                        break
-            if d == 0 and x - k >= 0:
-                for i in range(y + k, y - k, -1):
-                    if not (0 <= i < h):
-                        continue
-                    d = dp[i][x - k]
-                    if d > 0:
-                        break
-            if d > 0:
-                break
-
-    x = int(x) - int(w // 2)
-    y = int(y) - int(h // 2)
-    real_y = round(y * 2 * d * np.tan(a / 2) / h)
-    real_x = round(x * 2 * d * np.tan(b / 2) / w)
-    return real_x, real_y, d
-
-
-'''
-def callback_voice(msg):
-    global s
-    s = msg.text
-'''
-
 
 def speak(g):
     print("[robot said]: ", end=" ")
@@ -230,29 +139,7 @@ def call_ai_api(a):
 _image = None
 _depth = None
 CvBr = CvBridge()
-net_pose = HumanPoseEstimation(device_name="GPU")
 tf_listener = None
-def callback_image(msg):
-    global _image
-    _image = CvBr.imgmsg_to_cv2(msg, "bgr8")
-
-
-def callback_depth(msg):
-    global _depth
-    _depth = CvBr.imgmsg_to_cv2(msg, "32FC1")
-
-
-def say(text):
-    print(f"[Robot]: {text}")
-    os.system(f"espeak \"{text}\"")
-
-
-def move(dis, turn):
-    fb = Twist()
-    fb.linear.x = dis
-    fb.angular.z = turn
-    pub_cmd.publish(fb)
-
 
 def get_yaw_from_odom():
     global _odom
@@ -302,13 +189,6 @@ def turn(angle):
     turn_to(target, 0.5)
 
 
-def is_waving(pose):
-    right_up = (pose[5][2] > 0 and pose[9][2] > 0 and pose[9][1] < pose[5][1] - 30)
-    left_up = (pose[6][2] > 0 and pose[10][2] > 0 and pose[10][1] < pose[6][1] - 30)
-    if right_up: return "right"
-    if left_up: return "left"
-    return None
-
 
 def get_map_coords(dist_meters):
     try:
@@ -324,11 +204,107 @@ def get_map_coords(dist_meters):
         return None, None, None
 
 
-class KindaPiper(object):
-    L0 = 123.00
-    L1 = 285.00
-    L2 = 255.50
-    L3 = 90.00
+def rpy_to_rotation_matrix(rpy):
+    """將 (roll, pitch, yaw) 轉為旋轉矩陣 (Z-Y-X 順序)"""
+    r, p, y = rpy
+
+    Rx = np.array([
+        [1, 0, 0],
+        [0, np.cos(r), -np.sin(r)],
+        [0, np.sin(r), np.cos(r)]
+    ])
+    Ry = np.array([
+        [np.cos(p), 0, np.sin(p)],
+        [0, 1, 0],
+        [-np.sin(p), 0, np.cos(p)]
+    ])
+    Rz = np.array([
+        [np.cos(y), -np.sin(y), 0],
+        [np.sin(y), np.cos(y), 0],
+        [0, 0, 1]
+    ])
+
+    # 航太標準順序：R = Rz * Ry * Rx
+    return Rz @ Ry @ Rx
+
+
+def rotation_matrix_to_rpy(R):
+    """將 3x3 旋轉矩陣反解為 (roll, pitch, yaw)"""
+    # Pitch
+    p = np.arctan2(-R[2, 0], np.sqrt(R[0, 0] ** 2 + R[1, 0] ** 2))
+
+    # 檢查奇異點（Gimbal Lock 萬向鎖現象，當 Pitch 接近 +-90 度時）
+    if np.abs(np.cos(p)) < 1e-6:
+        # 當 Pitch = 90° 或 -90° 時，Roll 與 Yaw 會共面
+        r = 0.0
+        y = np.arctan2(-R[0, 1], R[1, 1])
+    else:
+        r = np.arctan2(R[2, 1], R[2, 2])
+        y = np.arctan2(R[1, 0], R[0, 0])
+
+    return np.array([r, p, y])
+
+
+def solve_6dof_wrist_zyz(R_wrist):
+    """
+    針對 6DOF 手腕 (Z-Y-Z 構型，如 J4-J5-J6) 反解關節歐拉角
+    :param R_wrist: 3x3 旋轉矩陣 (numpy array)
+    :return: dict 包含兩種可能的關節角度組合 (theta4, theta5, theta6) 單位：度
+    """
+    # 提取矩陣元素
+    r11, r12, r13 = R_wrist[0, 0], R_wrist[0, 1], R_wrist[0, 2]
+    r21, r22, r23 = R_wrist[1, 0], R_wrist[1, 1], R_wrist[1, 2]
+    r31, r32, r33 = R_wrist[2, 0], R_wrist[2, 1], R_wrist[2, 2]
+
+    # 檢查是否遭遇奇異點 (Singularity / Gimbal Lock)
+    # 當 J5 關節接近 0 度或 180 度時
+    sin_theta5_sq = r31 ** 2 + r32 ** 2
+
+    if sin_theta5_sq < 1e-6:
+        print("⚠️ 觸發手腕奇異點 (Wrist Singularity)！J4 與 J6 軸平行。")
+        # 遭遇奇異點時，令 theta4 = 0
+        t4 = 0.0
+        if r33 > 0:  # theta5 = 0
+            t5 = 0.0
+            t6 = np.arctan2(r21, r11)
+        else:  # theta5 = 180 度
+            t5 = np.pi
+            t6 = np.arctan2(-r21, r11)
+
+        return {
+            "solution_1": np.degrees([t4, t5, t6]),
+            "solution_2": None
+        }
+
+    # 一般情況：存在正反兩組解 (Wrist Up / Wrist Down)
+    # 解法一 (正弦值為正)
+    t5_1 = np.arctan2(np.sqrt(sin_theta5_sq), r33)
+    t4_1 = np.arctan2(r23, r13)
+    t6_1 = np.arctan2(r32, -r31)
+
+    # 解法二 (正弦值為負)
+    t5_2 = np.arctan2(-np.sqrt(sin_theta5_sq), r33)
+    t4_2 = np.arctan2(-r23, -r13)
+    t6_2 = np.arctan2(-r32, r31)
+
+    return {
+        "solution_1": np.degrees([t4_1, t5_1, t6_1]),
+        "solution_2": np.degrees([t4_2, t5_2, t6_2])
+    }
+
+
+def get_zyz_matrix(t4, t5, t6):
+    R4 = np.array([[np.cos(t4), -np.sin(t4), 0], [np.sin(t4), np.cos(t4), 0], [0, 0, 1]])
+    R5 = np.array([[np.cos(t5), 0, np.sin(t5)], [0, 1, 0], [-np.sin(t5), 0, np.cos(t5)]])
+    R6 = np.array([[np.cos(t6), -np.sin(t6), 0], [np.sin(t6), np.cos(t6), 0], [0, 0, 1]])
+    return R4 @ R5 @ R6
+
+
+class PiPER_Arm(object):
+    L01 = 123.00
+    L12 = 285.00
+    L23 = 255.50
+    L34 = 90.00 + 145.00
     JOINTS_LIMIT = (
         (-2.6179, 2.6179),
         (0.0, 3.14),
@@ -341,133 +317,165 @@ class KindaPiper(object):
 
     def __init__(self, port="can0"):
         super().__init__()
-        self.port = port
 
-    def connect(self, port=None):
-        if port is not None: self.port = port
-        self.piper = C_PiperInterface_V2(self.port)
-        # self.piper.DisconnectPort()
-
+        self.piper = C_PiperInterface_V2(port)
         self.piper.ConnectPort()
         while not self.piper.EnablePiper():
             time.sleep(0.01)
-        print(f"Port {self.port} connect success.")
+        print(f"PiPPER Arm connected to port {port}!")
 
-        self.piper.EnableArm(7, 0x02)
+    def get_joints(self):
+        js = self.piper.GetArmJointMsgs().joint_state
+        jx = [js.joint_1, js.joint_2, js.joint_3, js.joint_4, js.joint_5, js.joint_6]
+        return jx
 
-    def emergency_stop(self):
-        self.piper.EmergencyStop(0x01)
+    def get_end_pose(self):
+        end_pose = self.piper.GetArmEndPoseMsgs().end_pose
+        x = end_pose.X_axis
+        y = end_pose.Y_axis
+        z = end_pose.Z_axis
+        rx = end_pose.RX_axis
+        ry = end_pose.RY_axis
+        rz = end_pose.RZ_axis
+        return [x, y, z, rx, ry, rz]
 
-    def resume(self):
-        self.piper.EmergencyStop(0x02)
+    def get_gripper_state(self):
+        msg = self.piper.GetArmGripperMsgs()
+        angle = msg.gripper_state.grippers_angle
+        effort = msg.gripper_state.grippers_effort
+        return angle, effort
 
-    def reset(self):
-        self.piper.ResetPiper()
+    def valid_joints(self, joints):
+        if joints is None or len(joints) != 6: return False
+        for i in range(6):
+            if not (self.JOINTS_LIMIT[i][0] <= joints[i] <= self.JOINTS_LIMIT[i][1]):
+                return False
+        return True
 
-    def init(self):
-        self.piper.PiperInit()
+    def valid_gripper(self, distance):
+        if distance is None: return False
+        return self.GRIPPER_LIMIT[0] <= distance <= self.GRIPPER_LIMIT[1]
 
-    def check_joints(self, joints):
+    def clip_joints(self, joints):
+        if joints is None or len(joints) != 6: return False
+        for i in range(6):
+            joints[i] = max(self.JOINTS_LIMIT[i][0], min(joints[i], self.JOINTS_LIMIT[i][1]))
+        return joints
+
+    def clip_gripper(self, gripper):
+        if gripper is None: return False
+        return max(self.GRIPPER_LIMIT[i][0], min(gripper, self.GRIPPER_LIMIT[i][1]))
+
+    def check_joints(self, joints, gripper):
         if len(joints) != 6:
             print("len(joints) should be 6.")
-            return -1, []
+            joints[i] = max(JOINTS_LIMIT[i][0], min(joints[i], JOINTS_LIMIT[i][1]))
+            res = -2
 
-        JOINTS_LIMIT = self.JOINTS_LIMIT
-        angles = [round(i * 180 / np.pi, 2) for i in joints]
-        res = 0
-        for i in range(6):
-            if not (JOINTS_LIMIT[i][0] <= joints[i] <= JOINTS_LIMIT[i][1]):
-                print(f"joint_{i + 1} angle problem:", joints[i], angles[i])
-                joints[i] = max(JOINTS_LIMIT[i][0], min(joints[i], JOINTS_LIMIT[i][1]))
-                res = -2
-        return res, joints
+    if gripper != None:
+        GRIPPER_LIMIT = self.GRIPPER_LIMIT
+        if not (GRIPPER_LIMIT[0] <= gripper <= GRIPPER_LIMIT[1]):
+            print(f"gripper problem:", gripper)
+            gripper = max(GRIPPER_LIMIT[0], min(gripper, GRIPPER_LIMIT[1]))
+    return res, joints, gripper
 
-    def move_joint(self, joints, speed=30, wait_util_finish=True):
-        res, joints = self.check_joints(joints)
-        if res == -1: return -1
-        # print("move to", [round(i, 2) for i in joints])
 
-        joints = [round(x * 1000 * 180 / np.pi) for x in joints]
-        self.piper.ModeCtrl(0x01, 0x01, speed, 0x00)
-        self.piper.JointCtrl(*joints)
+def calc_distance(self, p1, p2):
+    return sum([(i - j) ** 2 for i, j in zip(p1, p2)]) ** 0.5
 
-        while wait_util_finish:
-            time.sleep(0.01)
-            js = self.piper.GetArmJointMsgs().joint_state
-            jx = [js.joint_1, js.joint_2, js.joint_3, js.joint_4, js.joint_5, js.joint_6]
-            max_e = np.inf
-            max_e = max([abs(x1 - x2) for x1, x2 in zip(jx, joints)])
-            if max_e < 1000:
-                wait_util_finish = False
-        return res
 
-    def calc_joints(self, x, y, z, rx, ry, rz):
-        L0 = self.L0
-        L1 = self.L1
-        L2 = self.L2
-        L3 = self.L3
+def set_joints(self, joints, speed=30):
+    if not self.valid_joints(joints):
+        print("JOINTS not valid.", joints)
+        joints = self.clip_joints(joints)
 
-        if not (L1 + L2) >= (x ** 2 + y ** 2 + z ** 2) ** 0.5 >= 150:
-            print("cannot reach that point!", x, y, z)
-            return -1, []
+    joints = [round(x * 1000 * 180 / np.pi) for x in joints]
+    self.piper.ModeCtrl(0x01, 0x01, speed, 0x00)
+    time.sleep(0.005)
+    self.piper.JointCtrl(*joints)
 
-        c = np.arctan2(z, x)
-        x1 = (x * x + z * z) ** 0.5
-        if x1 < 0: x1 = -x1
-        y1 = y
-        z1 = 0
+    e = self.calc_distance(joints, self.get_joints())
+    return e > 1000
 
-        Lk = (x1 * x1 + y1 * y1) ** 0.5
-        b = np.pi - np.arccos((L1 ** 2 + L2 ** 2 - Lk ** 2) / (2 * L1 * L2))
-        a = np.pi / 2 - np.arctan2(y1, x1) - np.arccos((L1 ** 2 + Lk ** 2 - L2 ** 2) / (2 * L1 * Lk))
-        a = a + np.pi / 2 - 8 * np.pi / 180
-        b = b - np.pi + 17.5 * np.pi / 180
 
-        # print("angles:", [round(x * 180 / np.pi, 2) for x in [c, a, b]])
-        x2 = x1 + L3 * np.cos(-(a + b))
-        y2 = y1 + L3 * np.sin(-(a + b))
-        z2 = z1
+def set_gripper(self, distance, effort=500, delay=1.0):
+    if not self.valid_gripper(distance):
+        print("GRIPPER not valid.", distance)
+        distance = self.clip_gripper(distance)
 
-        x3 = x2 * np.cos(c) + z2 * np.sin(c)
-        y3 = y2
-        z3 = x2 * np.sin(c) + z2 * np.cos(c)
+    distance = abs(round(distance * 100 * 1000))
+    self.piper.GripperCtrl(distance, effort, 0x01, 0x00)
+    time.sleep(delay)
 
-        x4 = x + L3 * np.cos(rz) * np.cos(ry)
-        z4 = z + L3 * np.cos(rx) * np.sin(ry)
-        y4 = y + L3 * np.cos(rx) * np.sin(rz)
-        # print(x, y, z, rx, ry, rz)
-        # print(x4, y4, z4)
-        # input()
+    state = self.get_gripper_state()
+    e = self.calc_distance([distance], [state[0]])
+    return e > 1000 and abs(state[1]) < effort
 
-        x5 = x1 * np.cos(c) + z1 * np.sin(c)
-        y5 = y1
-        z5 = x1 * np.sin(c) + z1 * np.cos(c)
 
-        # print("x0:", [round(i, 2) for i in [x, y, z]])
-        # print("x1:", [round(i, 2) for i in [x1, y1, z1]])
-        # print("x2:", [round(i, 2) for i in [x2, y2, z2]])
-        # print("x3:", [round(i, 2) for i in [x3, y3, z3]])
-        # print("x4:", [round(i, 2) for i in [x4, y4, z4]])
-        # print("x5:", [round(i, 2) for i in [x5, y5, z5]])
-        # print("L3:", ((x3 - x) ** 2 + (y3 - y) ** 2 + (z3 - z) ** 2) ** 0.5)
-        # print("L4:", ((x4 - x) ** 2 + (y4 - y) ** 2 + (z4 - z) ** 2) ** 0.5)
+def set_end_pose(self, x, y, z, rx, ry, rz, speed=50):
+    position = [x, y, z, rx, ry, rz]
+    position = [i * 1000 for i in position]
 
-        rx = self.calculate_rotation_angle(
-            [x5, y5, z5],
-            [x3, y3, z3],
-            [x4, y4, z4]
-        )
-        ry = self.calculate_angle_B(
-            [x3, y3, z3],
-            [x5, y5, z5],
-            [x4, y4, z4]
-        )
-        if abs(rx - np.pi) < abs(rx):
-            rx = rx - np.pi
-            ry = -ry
-        if z4 > 0: rx = -rx
-        rz = -rx + np.sin(c) * 1.0
-        return 0, [c, a, b, rx, ry, rz]
+    self.piper.ModeCtrl(0x01, 0x00, speed, 0x00)
+    time.sleep(0.005)
+    self.piper.EndPoseCtrl(*position)
+
+    status = self.piper.GetArmStatus().arm_status.arm_status
+    if status == 0x04:
+        return False
+    return True
+
+
+def calc_joints(self, x0, y0, z0, rx, ry, rz):
+    L01 = self.L01
+    L12 = self.L12
+    L23 = self.L23
+    L34 = self.L34
+
+    x1 = x0 - L34 * np.cos(ry) * np.cos(rz)
+    y1 = y0 - L34 * np.cos(ry) * np.sin(rz)
+    z1 = z0 - L34 * np.sin(ry)
+
+    c = np.arctan2(y1, x1)
+    x2 = (x1 ** 2 + y1 ** 2) ** 0.5
+    y2 = 0
+    z2 = z1
+
+    print(x0, y0, z0)
+    print(x1, y1, z1)
+    print(x2, y2, z2)
+    if not (L12 + L23) >= (x2 ** 2 + z2 ** 2) ** 0.5 >= 150:
+        print("cannot reach that point!", x0, y0, z0)
+        return []
+
+    Lk = (x2 ** 2 + z2 ** 2) ** 0.5
+    b = np.pi - np.arccos((L12 ** 2 + L23 ** 2 - Lk ** 2) / (2 * L12 * L23))
+    a = np.pi / 2 - np.arctan2(z2, x2) - np.arccos((L12 ** 2 + Lk ** 2 - L23 ** 2) / (2 * L12 * Lk))
+    a = a + np.pi / 2 - 8 * np.pi / 180
+    b = b - np.pi + 17.5 * np.pi / 180
+
+    R1 = rpy_to_rotation_matrix([0, 0, c])
+    R2 = rpy_to_rotation_matrix([0, a, 0])
+    R3 = rpy_to_rotation_matrix([0, b, 0])
+    R_total = R1 @ R2 @ R3
+    rpy = rotation_matrix_to_rpy(R_total)
+
+    rpy = rpy_to_rotation_matrix([rx, ry, rz]) @ np.linalg.inv(R_total)
+    rpy = rotation_matrix_to_rpy(rpy)
+    # R_curr = rpy_to_rotation_matrix(rpy)
+    # R_targ = rpy_to_rotation_matrix([rx, ry, rz])
+    # R_rel = R_curr.T @ R_targ
+    # # R_rel = R_targ @ R_curr.T
+    # rpy = rotation_matrix_to_rpy(R_rel)
+    print(rpy[1], -a - b - ry)
+    print(np.linalg.inv(R_total) @ R_total)
+
+    R_test = get_zyz_matrix(rx, ry, rz)
+    solutions = solve_6dof_wrist_zyz(R_test)
+    print(solutions)
+    rpy = [x * np.pi / 180 for x in solutions['solution_1']]
+    rpy[1] = -rpy[1]
+    return [c, a, b, *rpy]
 def move_to_bar(a):
     if a==1:
         turn_to(0, 0.2)
@@ -485,13 +493,11 @@ def move_to_bar(a):
 if __name__ == "__main__":
     rospy.init_node("demo")
     rospy.loginfo("demo node start!")
-    # open things
     print("cmd_vel")
     _cmd_vel = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
     print("speak")
     s = ""
     rospy.Subscriber("/voice/text", Voice, callback_voice)
-    net_pose = HumanPoseEstimation(device_name="GPU")
     print("gemini rgb")
     _frame1 = None
     _sub_down_cam_image1 = rospy.Subscriber("/cam1/color/image_raw", Image, callback_image1)
@@ -501,19 +507,11 @@ if __name__ == "__main__":
     dnn_yolo = Yolov8("yolov8n", device_name="GPU")
     _odom = None
     rospy.Subscriber("/odom", Odometry, callback_odom)
-    pub_cmd = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
     chassis = RobotChassis()
     cv2.namedWindow("frame", cv2.WINDOW_NORMAL)
     follow_cnt = 0
     action = 0
     step_action = 0
-    print("yolov8")
-    Kinda = np.loadtxt(RosPack().get_path("mr_dnn") + "/Kinda.csv")
-    dnn_yolo1 = Yolov8("yolov8n", device_name="GPU")
-    # s = ""
-    print("sever1")
-    # gg = post_message_request("-1", "", "")
-    print("sever2")
     step = "none"
     confirm_command = 0
     # left positive
@@ -531,14 +529,12 @@ if __name__ == "__main__":
     print("0")
     finded_niggasss = 0
     speak_j = ""
-    output_dir = "/home/pcms/catkin_ws/src/beginner_tutorials/src/m1_evidence/"
     model = YOLO("yolov8n-pose.pt")
     speak("To all audience please put your hand under your shoulder if you are not calling for an order")
     speak("repeat")
     speak("To all audience please put your hand under your shoulder if you are not calling for an order")
     time.sleep(1)
     speak("thank you")
-    startx, starty, start_yaw = get_map_coords(0)
     arm = PiPER_Arm()
     arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
     arm.open_gripper()
@@ -574,13 +570,13 @@ if __name__ == "__main__":
                 action = "find"
                 speak("finding customer")
                 step_action = 1
+                mini_depth=99999
             if step_action == 1:
                 # walk in front of the guy
                 if step == "turn":
                     move(0, -0.2)
                 if action == "find":
                     image = _frame1.copy()
-                    poses = net_pose.forward(code_image)
                     result = model(image)[0]
                     if result.boxes is not None and len(result.boxes) > 0:  # found person
                         person_keypoints = result.keypoints.xy.cpu().numpy()
@@ -609,8 +605,9 @@ if __name__ == "__main__":
                                     cv2.imwrite(file_path)
 
                                     person_depth = code_depth[nose_y][nose_x]
-                                    if person_depth and person_depth > 1500 and np.isfinite(person_depth) and person_depth<target_max_depth:
+                                    if person_depth!=0 and person_depth > 1500 and np.isfinite(person_depth) and person_depth<target_max_depth and person_depth<mini_depth:
                                         step_action = -6
+                                        mini_depth=person_depth
                         except Exception as e:
                             print(f"error: {e}")
             if step_action == -6:  # find & go to the customer - facing the customer
@@ -642,8 +639,7 @@ if __name__ == "__main__":
                 speak("please tell me your order in complete sentence, for example: I want an apple and orange juice")
                 yn = 0
                 start_time = time.time()
-                playsound(
-                    '/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
+                playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
                 try:
                     cmd = [
                         "arecord",
@@ -657,9 +653,9 @@ if __name__ == "__main__":
 
                     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
                     print("⏹️ 錄音結束！")
-                    data = call_ai_api(1).lower()
+                    data1 = call_ai_api(1).lower()
 
-                    if "Nothing" not in data or "nothing" not in data:
+                    if "Nothing" not in data1 or "nothing" not in data1:
                         step_action = 99
                 except Exception as e:
                     print(f"\n執行失敗: {e}")
@@ -675,17 +671,19 @@ if __name__ == "__main__":
                         time.sleep(0.026)
                     time.sleep(1)
                     speak("hello customers, please raise your hand over your head if you need a order")
+                    step_action=1
+                    mini_depth = 99999
                 # data = command_list[i]
                 # continue
             if step_action == 99:
                 speak("dear customer your order is")
                 time.sleep(0.3)
-                content_clean = data.replace("```json", "").replace("```", "").strip()
-                data = json.loads(content_clean)
-                final_speak_to_guest = data[0]+" and " +data[1]
+                content_clean = data1.replace("```json", "").replace("```", "").strip()
+                data1 = json.loads(content_clean)
+                final_speak_to_guest = data1[0]+" and " +data1[1]
                 s = ""
                 print("Your order is **********************")
-                print(data)
+                print(data1)
 
                 speak(final_speak_to_guest)
                 print("********************")
@@ -730,12 +728,13 @@ if __name__ == "__main__":
                         time.sleep(0.026)
                     time.sleep(1)
                     speak("hello customers, please raise your hand over your head if you need a order")
+                    step_action = 1
+                    mini_depth = 99999
                 elif yn==2:
                     step_action = 2
                 else:
                     step_action = 9
             if step_action == 9:
-                time.sleep(3)
                 for walk in range(round(meter / 100)):
                     move(-0.2, 0)
                     time.sleep(0.5)
@@ -746,7 +745,7 @@ if __name__ == "__main__":
             if step_action == 10:
                 startx, starty, _yaw = get_map_coords(0, 0)
                 move_to_bar(1)
-                speak("dear bar man please put "+final_speak_to_guest[0]+" between my gripper until it close")
+                speak("dear bar man please put "+data1[0]+" between my gripper until it close")
                 time.sleep(5)
                 speak("5")
                 speak("4")
