@@ -19,7 +19,7 @@ from geometry_msgs.msg import Twist
 from cv_bridge import CvBridge
 from RobotChassis import RobotChassis
 import time
-from piper_sdk import *
+from piper_sdk_demo import *
 import numpy as np
 import json
 def callback_image1(msg):
@@ -300,86 +300,6 @@ def get_zyz_matrix(t4, t5, t6):
     return R4 @ R5 @ R6
 
 
-class PiPER_Arm(object):
-    L01 = 123.00
-    L12 = 285.00
-    L23 = 255.50
-    L34 = 90.00 + 145.00
-    JOINTS_LIMIT = (
-        (-2.6179, 2.6179),
-        (0.0, 3.14),
-        (-2.967, 0.0),
-        (-1.745, 1.745),
-        (-1.22, 1.22),
-        (-2.09439, 2.09439)
-    )
-    GRIPPER_LIMIT = (0, 1)
-
-    def __init__(self, port="can0"):
-        super().__init__()
-
-        self.piper = C_PiperInterface_V2(port)
-        self.piper.ConnectPort()
-        while not self.piper.EnablePiper():
-            time.sleep(0.01)
-        print(f"PiPPER Arm connected to port {port}!")
-
-    def get_joints(self):
-        js = self.piper.GetArmJointMsgs().joint_state
-        jx = [js.joint_1, js.joint_2, js.joint_3, js.joint_4, js.joint_5, js.joint_6]
-        return jx
-
-    def get_end_pose(self):
-        end_pose = self.piper.GetArmEndPoseMsgs().end_pose
-        x = end_pose.X_axis
-        y = end_pose.Y_axis
-        z = end_pose.Z_axis
-        rx = end_pose.RX_axis
-        ry = end_pose.RY_axis
-        rz = end_pose.RZ_axis
-        return [x, y, z, rx, ry, rz]
-
-    def get_gripper_state(self):
-        msg = self.piper.GetArmGripperMsgs()
-        angle = msg.gripper_state.grippers_angle
-        effort = msg.gripper_state.grippers_effort
-        return angle, effort
-
-    def valid_joints(self, joints):
-        if joints is None or len(joints) != 6: return False
-        for i in range(6):
-            if not (self.JOINTS_LIMIT[i][0] <= joints[i] <= self.JOINTS_LIMIT[i][1]):
-                return False
-        return True
-
-    def valid_gripper(self, distance):
-        if distance is None: return False
-        return self.GRIPPER_LIMIT[0] <= distance <= self.GRIPPER_LIMIT[1]
-
-    def clip_joints(self, joints):
-        if joints is None or len(joints) != 6: return False
-        for i in range(6):
-            joints[i] = max(self.JOINTS_LIMIT[i][0], min(joints[i], self.JOINTS_LIMIT[i][1]))
-        return joints
-
-    def clip_gripper(self, gripper):
-        if gripper is None: return False
-        return max(self.GRIPPER_LIMIT[i][0], min(gripper, self.GRIPPER_LIMIT[i][1]))
-
-    def check_joints(self, joints, gripper):
-        if len(joints) != 6:
-            print("len(joints) should be 6.")
-            joints[i] = max(JOINTS_LIMIT[i][0], min(joints[i], JOINTS_LIMIT[i][1]))
-            res = -2
-
-    if gripper != None:
-        GRIPPER_LIMIT = self.GRIPPER_LIMIT
-        if not (GRIPPER_LIMIT[0] <= gripper <= GRIPPER_LIMIT[1]):
-            print(f"gripper problem:", gripper)
-            gripper = max(GRIPPER_LIMIT[0], min(gripper, GRIPPER_LIMIT[1]))
-    return res, joints, gripper
-
-
 def calc_distance(self, p1, p2):
     return sum([(i - j) ** 2 for i, j in zip(p1, p2)]) ** 0.5
 
@@ -514,34 +434,38 @@ if __name__ == "__main__":
     step_action = 0
     step = "none"
     confirm_command = 0
+    arm = KindaPiper()
+    arm.connect("can0")
+    arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
+    arm.set_gripper(1)
     # left positive
-    turn(35)
     '''
-    for i in range(35):
-        move(0, 0.2)
-        time.sleep(0.125)'''
+    turn(90*np.pi/180)
     nigga_meter = 2000
     for iii in range(round(nigga_meter / 100)):
         move(0.2, 0)
-        time.sleep(0.5)
+        time.sleep(0.5)'''
     speak("I am ready")
     meter = 1000
     print("0")
     finded_niggasss = 0
+    
     speak_j = ""
     model = YOLO("yolov8n-pose.pt")
+    '''
     speak("To all audience please put your hand under your shoulder if you are not calling for an order")
     speak("repeat")
     speak("To all audience please put your hand under your shoulder if you are not calling for an order")
     time.sleep(1)
-    speak("thank you")
-    arm = PiPER_Arm()
-    arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
-    arm.open_gripper()
+    speak("thank you")'''
+    
     target_max_depth=6000
     evidence_cnt=1
+    mini_depth=9999999
     for ifffff in [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 3, 4, 5, 6]:
-        step_action = 0
+        step_action = 1
+        step="turn"
+        action = "find"
         depth_ddd = 0
         skip_voice_cnt = 0
         repeat_cnt = 0
@@ -579,16 +503,23 @@ if __name__ == "__main__":
                     image = _frame1.copy()
                     result = model(image)[0]
                     if result.boxes is not None and len(result.boxes) > 0:  # found person
-                        person_keypoints = result.keypoints.xy.cpu().numpy()
+                        person_keypoints = result.keypoints.xy.cpu().numpy() # Shape: (num_persons, 17, 2)
                         print(person_keypoints)
 
-                        for keypoint in person_keypoints:
-                            kx, ky = keypoint
-                            cv2.circle(image, (kx, ky), 10, (255, 0, 0), -1)
+                        # Loop through each person, then loop through their individual points to draw
+                        for person in person_keypoints:
+                            for kp in person:
+                                kx, ky = map(int, kp) # Unpack individual X, Y coordinates
+                                if kx != 0 and ky != 0: # Avoid drawing the (0,0) un-detected points
+                                    cv2.circle(image, (kx, ky), 10, (255, 0, 0), -1)
 
                         try:
-                            nose = person_keypoints[0]
-                            lwrist, rwrist = person_keypoints[9], person_keypoints[10]
+                            # Index the FIRST person [0], and then their specific keypoint
+                            # YOLO keypoints: 0=nose, 9=left_wrist, 10=right_wrist
+                            first_person = person_keypoints[0] 
+                            
+                            nose = first_person[0]
+                            lwrist, rwrist = first_person[9], first_person[10]
 
                             nose_x, nose_y = map(int, nose)
                             lwrist_y = int(lwrist[1])
@@ -596,44 +527,57 @@ if __name__ == "__main__":
 
                             if lwrist_y < nose_y or rwrist_y < nose_y:  # wrist above nose
                                 if 0 <= nose_x <= w and 0 <= nose_y <= h:  # check if position is valid
-                                    # draw boxes for partial points
-                                    x1, y1, x2, y2 = map(int, result.boxes.xyxy)
+                                    print("888888888888888888:")
+                                    x1, y1, x2, y2 = map(int, result.boxes.xyxy[0])
                                     cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                    
                                     file_path = "/home/pcms/catkin_ws/src/beginner_tutorials/src/m1_evidence/"
-                                    name_photo= "proof"+str(evidence_cnt)+".jpg"
-                                    file_path = file_path+name_photo
-                                    cv2.imwrite(file_path)
+                                    name_photo = "proof" + str(evidence_cnt) + ".jpg"
+                                    file_path = file_path + name_photo
+                                    cv2.imwrite(file_path, image) # Added missing 'image' argument
 
                                     person_depth = code_depth[nose_y][nose_x]
-                                    if person_depth!=0 and person_depth > 1500 and np.isfinite(person_depth) and person_depth<target_max_depth and person_depth<mini_depth:
+                                    if person_depth != 0 and person_depth > 1500 and np.isfinite(person_depth) and person_depth < target_max_depth and person_depth < mini_depth:
                                         step_action = -6
-                                        mini_depth=person_depth
+                                        mini_depth = person_depth
                         except Exception as e:
                             print(f"error: {e}")
+
             if step_action == -6:  # find & go to the customer - facing the customer
-                result = model(image[0])
-                person_keypoints = result.keypoints.xy.cpu().numpy()
-                nose = person_keypoints[0]
-                h, w, c = image.shape
-                image_mid = w // 2
-                diff = 10
-                e = w // 2 - nose[0]
-                v = 0.001 * e
-                if v > 0:
-                    v = min(v, 0.2)
-                if v < 0:
-                    v = max(v, -0.2)
-                move(0, v)
-                print(e)
-                if abs(e) <= 25:
-                    speak("found you the customer who need order")
-                    meter = person_depth - 1400 -400
-                    time.sleep(2)
-                    print("walking", meter)
-                    for walk in range(round(meter / 100)):
-                        move(0.2, 0)
-                        time.sleep(0.5)
-                    step_action=2
+                image = _frame1.copy()
+                result = model(image)[0]
+                
+                if result.boxes is not None and len(result.boxes) > 0:
+                    person_keypoints = result.keypoints.xy.cpu().numpy()
+                    first_person = person_keypoints[0]
+                    
+                    # YOLO Keypoints: 5 = Left Shoulder, 6 = Right Shoulder
+                    l_shoulder = first_person[5]
+                    r_shoulder = first_person[6]
+                    
+                    # Calculate torso center based on available shoulder data
+                    if l_shoulder[0] > 0 and r_shoulder[0] > 0:
+                        torso_center_x = (l_shoulder[0] + r_shoulder[0]) / 2.0
+                    elif l_shoulder[0] > 0:
+                        torso_center_x = l_shoulder[0]  # Fallback to left shoulder
+                    elif r_shoulder[0] > 0:
+                        torso_center_x = r_shoulder[0]  # Fallback to right shoulder
+                    else:
+                        torso_center_x = None  # No shoulders detected
+                    
+                    if torso_center_x is not None:
+                        image_mid = w // 2
+                        diff = 15   # Centering tolerance in pixels
+                        
+                        # Align robot with torso center
+                        if image_mid - diff <= torso_center_x <= image_mid + diff:
+                            step_action = 2
+                        else:
+                            if torso_center_x > image_mid:   # customer is to the right
+                                turn(10 / 180 * np.pi)
+                            else:                            # customer is to the left
+                                turn(-10 / 180 * np.pi)
+                    
             if step_action == 2:
                 speak("dear customer, please tell me what you want")
                 speak("please tell me your order in complete sentence, for example: I want an apple and orange juice")
@@ -763,7 +707,7 @@ if __name__ == "__main__":
                 time.sleep(3)
                 speak("dear customer, this is "+final_speak_to_guest[0])
                 arm.move_joint([600, 50, 0, 0, 0, 0], 10, 30)
-                arm.open_gripper()
+                arm.set_gripper(1)
                 arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
                 for walk in range(round((meter) / 100)):
                     move(-0.2, 0)
@@ -787,7 +731,7 @@ if __name__ == "__main__":
                 time.sleep(3)
                 speak("dear customer, this is " + final_speak_to_guest[1])
                 arm.move_joint([600, 50, 0, 0, 0, 0], 10, 30)
-                arm.open_gripper()
+                arm.set_gripper(1)
                 arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
                 for walk in range(round((meter) / 100)):
                     move(-0.2, 0)
@@ -796,7 +740,7 @@ if __name__ == "__main__":
                 finded_niggasss += 1
                 evidence_cnt+=1
                 break
-            cv2.imshow("frame", code_image)
+            cv2.imshow("frame", image)
             key = cv2.waitKey(1)
             if key in [ord('q'), 27]:
                 break
