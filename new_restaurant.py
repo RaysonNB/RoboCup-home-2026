@@ -82,14 +82,17 @@ def call_ai_api(a):
                 answer it in ths format for example: ["apple","coffee"]
                 just answer me with a python list
                 if the order is two apple, please answer me in ["apple", "apple"]
-                if nothing in the audio answer: ["nothing']
+                if nothing is in the audio answer: ["nothing'], don't give me extral text
+                Reply with only one of these two exact phrases:
+                1. ["nothing']
+                2. ["item1", "item2"]
                 '''
         else:
             optimized_prompt = '''
             Listen to the customer's response in the audio. Reply with only one of these three exact phrases:
             1. robot yes
             2. robot no
-            3. no answer from the customer
+            3. nothing answer from the customer
             Do not add any extra words or punctuation.
             '''
 
@@ -408,7 +411,7 @@ def calc_joints(self, x0, y0, z0, rx, ry, rz):
 
 def move_to_bar(a):
     if a == 1:
-        turn_to(0, 0.2)
+        turn_to(0.12831112955412388, 0.2)
         nigga_meter = 1000
         for iii in range(round(nigga_meter / 100)):
             move(-0.2, 0)
@@ -468,6 +471,7 @@ def get_real_xyz(dp, x, y, num):
     return real_x, real_y, d
 
 if __name__ == "__main__":
+    
     rospy.init_node("demo")
     rospy.loginfo("demo node start!")
     print("cmd_vel")
@@ -484,7 +488,6 @@ if __name__ == "__main__":
     net_pose = HumanPoseEstimation(device_name="GPU")
     _odom = None
     rospy.Subscriber("/odom", Odometry, callback_odom)
-    chassis = RobotChassis()
     cv2.namedWindow("frame", cv2.WINDOW_NORMAL)
     follow_cnt = 0
     action = 0
@@ -493,15 +496,18 @@ if __name__ == "__main__":
     confirm_command = 0
     arm = KindaPiper()
     arm.connect("can0")
+    tf_listener = tf.TransformListener()
     arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
     arm.set_gripper(1)
     # left positive
-    '''
+    startx, starty, _1yaw = get_map_coords(0)
+    print(_1yaw)
+    
     turn(90*np.pi/180)
     nigga_meter = 2000
     for iii in range(round(nigga_meter / 100)):
         move(0.2, 0)
-        time.sleep(0.5)'''
+        time.sleep(0.5)
     speak("I am ready")
     meter = 1000
     print("0")
@@ -542,11 +548,11 @@ if __name__ == "__main__":
             catch_image = _frame1.copy()
             h, w, c = code_image.shape
             if step_action == 0:
-                speak("hello customers, please raise your hand over your head if you need a order")
-                speak("don't put down your hands, until the robot come through, thank you")
+                #speak("hello customers, please raise your hand over your head if you need a order")
+                #speak("don't put down your hands, until the robot come through, thank you")
                 step = "turn"
                 action = "find"
-                speak("finding customer")
+                #speak("finding customer")
                 step_action = 1
             if step_action == 1:
                 # walk in front of the guy
@@ -663,7 +669,7 @@ if __name__ == "__main__":
                         step_action = 99
                 except Exception as e:
                     print(f"\n執行失敗: {e}")
-                if abs((start_time - time.time())) >= 25:
+                if abs((start_time - time.time())) >= 35 or "nothing" in data1:
                     speak("I can't get it, I gonna go back now")
                     time.sleep(3)
                     for walk in range(round(meter / 100)):
@@ -684,50 +690,52 @@ if __name__ == "__main__":
                 time.sleep(0.3)
                 content_clean = data1.replace("```json", "").replace("```", "").strip()
                 data1 = json.loads(content_clean)
-                final_speak_to_guest = data1[0] + " and " + data1[1]
-                s = ""
-                print("Your order is **********************")
-                print(data1)
+                if len(data1)!=2:
+                    step_action=2
+                else:
+                    final_speak_to_guest = data1[0] + " and " + data1[1]
+                    s = ""
+                    print("Your order is **********************")
+                    print(data1)
 
-                speak(final_speak_to_guest)
-                print("********************")
-                speak("please answer robot yes or robot no thank you")
-                speak("sound")
-                time.sleep(2)
-                playsound(
-                    '/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
-                yn = -1
-                for i in range(3):
-                    try:
-                        cmd = [
-                            "arecord",
-                            "-D", ALSA_DEVICE,
-                            "-d", str(RECORD_SECONDS),
-                            "-f", "S16_LE",
-                            "-r", str(SAMPLE_RATE),
-                            "-c", "1",
-                            AUDIO_PATH
-                        ]
+                    speak(final_speak_to_guest)
+                    print("********************")
+                    speak("please answer robot yes or robot no thank you")
+                    playsound(
+                        '/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
+                    yn = -1
+                    for i in range(3):
+                        try:
+                            cmd = [
+                                "arecord",
+                                "-D", ALSA_DEVICE,
+                                "-d", str(3),
+                                "-f", "S16_LE",
+                                "-r", str(SAMPLE_RATE),
+                                "-c", "1",
+                                AUDIO_PATH
+                            ]
 
-                        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
-                        print("⏹️ 錄音結束！")
-                        data = call_ai_api(2)
-                        if "Nothing" not in data or "nothing" not in data:
-                            yn = 1
-                        elif "no" in data:
-                            yn = 2
+                            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+                            print("⏹️ 錄音結束！")
+                            data = call_ai_api(2)
+                            if "no" in data and "robot" in data:
+                                yn = 2
+                                break
+                            elif "yes" in data:
+                                step_action=9
+                                yn=1
+                                break
 
-                    except Exception as e:
-                        print(f"\n執行失敗: {e}")
-                        step_action = 100
-                    speak("please repeat")
+                        except Exception as e:
+                            print(f"\n執行失敗: {e}")
+                        speak("please repeat")
                 if yn == -1:
                     speak("I can't get it, I gonna go back now")
                     time.sleep(3)
                     for walk in range(round(meter / 100)):
                         move(-0.2, 0)
                         time.sleep(0.5)
-                    step_action = 100
                     for turn in range(30):
                         move(0, -0.6)
                         time.sleep(0.026)
@@ -748,7 +756,7 @@ if __name__ == "__main__":
                 time.sleep(2)
                 step_action = 10
             if step_action == 10:
-                startx, starty, _yaw = get_map_coords(0, 0)
+                startx, starty, _yaw = get_map_coords(0)
                 move_to_bar(1)
                 speak("dear bar man please put " + data1[0] + " between my gripper until it close")
                 time.sleep(5)
@@ -757,7 +765,7 @@ if __name__ == "__main__":
                 speak("3")
                 speak("2")
                 speak("1")
-                arm.set_gripper(1, 1000)
+                arm.set_gripper(0, 1000)
                 move_to_bar(2)
                 turn_to(_yaw, 0.2)
                 speak("I gonna move")
@@ -767,7 +775,7 @@ if __name__ == "__main__":
                     time.sleep(0.5)
                 time.sleep(3)
                 speak("dear customer, this is " + final_speak_to_guest[0])
-                arm.move_joint([600, 50, 0, 0, 0, 0], 10, 30)
+                arm.move_to_endpoint2(200, 400,0, 0, 0, 0)
                 arm.set_gripper(1)
                 arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
                 for walk in range(round((meter) / 100)):
@@ -782,8 +790,9 @@ if __name__ == "__main__":
                 speak("3")
                 speak("2")
                 speak("1")
-                arm.set_gripper(1, 1000)
+                arm.set_gripper(0, 1000)
                 speak("I gonna move")
+                move_to_bar(2)
                 turn_to(_yaw, 0.2)
                 move(0, 0)
                 for walk in range(round((meter) / 100)):
@@ -791,7 +800,7 @@ if __name__ == "__main__":
                     time.sleep(0.5)
                 time.sleep(3)
                 speak("dear customer, this is " + final_speak_to_guest[1])
-                arm.move_joint([600, 50, 0, 0, 0, 0], 10, 30)
+                arm.move_to_endpoint2(200, 400,0, 0, 0, 0)
                 arm.set_gripper(1)
                 arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
                 for walk in range(round((meter) / 100)):
@@ -801,7 +810,7 @@ if __name__ == "__main__":
                 finded_niggasss += 1
                 evidence_cnt += 1
                 break
-            cv2.imshow("frame", image)
+            cv2.imshow("frame", code_image)
             key = cv2.waitKey(1)
             if key in [ord('q'), 27]:
                 break
