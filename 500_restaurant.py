@@ -22,12 +22,19 @@ import time
 from piper_sdk_demo import *
 import numpy as np
 import json
+
+angle_bar = 0
+first_angle = 90
+first_meter = 1000
 def callback_image1(msg):
     global _frame1
     _frame1 = CvBridge().imgmsg_to_cv2(msg, "bgr8")
+
+
 def callback_depth1(msg):
     global _depth1
     _depth1 = CvBridge().imgmsg_to_cv2(msg, "passthrough")
+
 
 def speak(g):
     print("[robot said]: ", end=" ")
@@ -58,6 +65,7 @@ SAMPLE_RATE = 44100
 RECORD_SECONDS = 7
 ALSA_DEVICE = "pulse"
 
+
 def encode_audio(audio_path):
     with open(audio_path, "rb") as audio_file:
         return base64.b64encode(audio_file.read()).decode('utf-8')
@@ -76,14 +84,17 @@ def call_ai_api(a):
                 answer it in ths format for example: ["apple","coffee"]
                 just answer me with a python list
                 if the order is two apple, please answer me in ["apple", "apple"]
-                if nothing in the audio answer: ["nothing']
+                if nothing is in the audio answer: ["nothing'], don't give me extral text
+                Reply with only one of these two exact phrases:
+                1. ["nothing']
+                2. ["item1", "item2"]
                 '''
         else:
             optimized_prompt = '''
             Listen to the customer's response in the audio. Reply with only one of these three exact phrases:
             1. robot yes
             2. robot no
-            3. no answer from the customer
+            3. nothing answer from the customer
             Do not add any extra words or punctuation.
             '''
 
@@ -128,7 +139,6 @@ def call_ai_api(a):
             print(f"[AI 訂單分析結果]:\n{content}")
             print("-" * 40)
             return content
-            print(f"[API 執行時間]: {end_time - start_time:.2f} 秒")
         else:
             print("[AI 錯誤]: API 回傳異常")
             print(json.dumps(result, indent=2))
@@ -136,13 +146,18 @@ def call_ai_api(a):
 
     except Exception as e:
         print(f"[AI 發生錯誤]: {e}")
+
+
 _image = None
 _depth = None
 CvBr = CvBridge()
 tf_listener = None
 
+
 def get_yaw_from_odom():
     global _odom
+    if _odom is None:
+        return 0
     q = [
         _odom.pose.pose.orientation.x,
         _odom.pose.pose.orientation.y,
@@ -162,7 +177,7 @@ def turn_to(angle, speed):
     max_speed = 1.82
     start = rospy.get_time()
 
-    while True:
+    while not rospy.is_shutdown():
         yaw = get_yaw_from_odom()
         e = normalize_angle(angle - yaw)
 
@@ -189,108 +204,63 @@ def turn(angle):
     turn_to(target, 0.5)
 
 
-
-def get_map_coords(dist_meters):
+def get_odom_pose():
+    """替代原有的 get_map_coords，僅使用里程計 (Odom) 獲取當前位置與角度"""
     try:
-        (trans, rot) = tf_listener.lookupTransform('/map', '/base_link', rospy.Time(0))
+        # 改為監聽 /odom 到 /base_link 的轉換，不使用 /map
+        (trans, rot) = tf_listener.lookupTransform('/odom', '/base_link', rospy.Time(0))
         euler = tf.transformations.euler_from_quaternion(rot)
         yaw = euler[2]
-        print("angle", yaw)
-        target_x = trans[0] + dist_meters  # test np.cos(yaw)
-        target_y = trans[1] + dist_meters * np.tan(yaw)  # test np.sin(yaw)
-        return target_x, target_y, yaw
+        return trans[0], trans[1], yaw
     except Exception as e:
-        rospy.logerr(f"TF Error: {e}")
-        return None, None, None
+        # 如果 TF 抓不到，則從 callback 獲取的 _odom 訊息提取
+        if _odom is not None:
+            q = _odom.pose.pose.orientation
+            euler = tf.transformations.euler_from_quaternion([q.x, q.y, q.z, q.w])
+            return _odom.pose.pose.position.x, _odom.pose.pose.position.y, euler[2]
+        return 0, 0, 0
 
 
 def rpy_to_rotation_matrix(rpy):
-    """將 (roll, pitch, yaw) 轉為旋轉矩陣 (Z-Y-X 順序)"""
     r, p, y = rpy
-
-    Rx = np.array([
-        [1, 0, 0],
-        [0, np.cos(r), -np.sin(r)],
-        [0, np.sin(r), np.cos(r)]
-    ])
-    Ry = np.array([
-        [np.cos(p), 0, np.sin(p)],
-        [0, 1, 0],
-        [-np.sin(p), 0, np.cos(p)]
-    ])
-    Rz = np.array([
-        [np.cos(y), -np.sin(y), 0],
-        [np.sin(y), np.cos(y), 0],
-        [0, 0, 1]
-    ])
-
-    # 航太標準順序：R = Rz * Ry * Rx
+    Rx = np.array([[1, 0, 0], [0, np.cos(r), -np.sin(r)], [0, np.sin(r), np.cos(r)]])
+    Ry = np.array([[np.cos(p), 0, np.sin(p)], [0, 1, 0], [-np.sin(p), 0, np.cos(p)]])
+    Rz = np.array([[np.cos(y), -np.sin(y), 0], [np.sin(y), np.cos(y), 0], [0, 0, 1]])
     return Rz @ Ry @ Rx
 
 
 def rotation_matrix_to_rpy(R):
-    """將 3x3 旋轉矩陣反解為 (roll, pitch, yaw)"""
-    # Pitch
     p = np.arctan2(-R[2, 0], np.sqrt(R[0, 0] ** 2 + R[1, 0] ** 2))
-
-    # 檢查奇異點（Gimbal Lock 萬向鎖現象，當 Pitch 接近 +-90 度時）
     if np.abs(np.cos(p)) < 1e-6:
-        # 當 Pitch = 90° 或 -90° 時，Roll 與 Yaw 會共面
         r = 0.0
         y = np.arctan2(-R[0, 1], R[1, 1])
     else:
         r = np.arctan2(R[2, 1], R[2, 2])
         y = np.arctan2(R[1, 0], R[0, 0])
-
     return np.array([r, p, y])
 
 
 def solve_6dof_wrist_zyz(R_wrist):
-    """
-    針對 6DOF 手腕 (Z-Y-Z 構型，如 J4-J5-J6) 反解關節歐拉角
-    :param R_wrist: 3x3 旋轉矩陣 (numpy array)
-    :return: dict 包含兩種可能的關節角度組合 (theta4, theta5, theta6) 單位：度
-    """
-    # 提取矩陣元素
     r11, r12, r13 = R_wrist[0, 0], R_wrist[0, 1], R_wrist[0, 2]
     r21, r22, r23 = R_wrist[1, 0], R_wrist[1, 1], R_wrist[1, 2]
     r31, r32, r33 = R_wrist[2, 0], R_wrist[2, 1], R_wrist[2, 2]
-
-    # 檢查是否遭遇奇異點 (Singularity / Gimbal Lock)
-    # 當 J5 關節接近 0 度或 180 度時
     sin_theta5_sq = r31 ** 2 + r32 ** 2
-
     if sin_theta5_sq < 1e-6:
-        print("⚠️ 觸發手腕奇異點 (Wrist Singularity)！J4 與 J6 軸平行。")
-        # 遭遇奇異點時，令 theta4 = 0
         t4 = 0.0
-        if r33 > 0:  # theta5 = 0
+        if r33 > 0:
             t5 = 0.0
             t6 = np.arctan2(r21, r11)
-        else:  # theta5 = 180 度
+        else:
             t5 = np.pi
             t6 = np.arctan2(-r21, r11)
-
-        return {
-            "solution_1": np.degrees([t4, t5, t6]),
-            "solution_2": None
-        }
-
-    # 一般情況：存在正反兩組解 (Wrist Up / Wrist Down)
-    # 解法一 (正弦值為正)
+        return {"solution_1": np.degrees([t4, t5, t6]), "solution_2": None}
     t5_1 = np.arctan2(np.sqrt(sin_theta5_sq), r33)
     t4_1 = np.arctan2(r23, r13)
     t6_1 = np.arctan2(r32, -r31)
-
-    # 解法二 (正弦值為負)
     t5_2 = np.arctan2(-np.sqrt(sin_theta5_sq), r33)
     t4_2 = np.arctan2(-r23, -r13)
     t6_2 = np.arctan2(-r32, r31)
-
-    return {
-        "solution_1": np.degrees([t4_1, t5_1, t6_1]),
-        "solution_2": np.degrees([t4_2, t5_2, t6_2])
-    }
+    return {"solution_1": np.degrees([t4_1, t5_1, t6_1]), "solution_2": np.degrees([t4_2, t5_2, t6_2])}
 
 
 def get_zyz_matrix(t4, t5, t6):
@@ -300,106 +270,11 @@ def get_zyz_matrix(t4, t5, t6):
     return R4 @ R5 @ R6
 
 
-def calc_distance(self, p1, p2):
-    return sum([(i - j) ** 2 for i, j in zip(p1, p2)]) ** 0.5
-
-
-def set_joints(self, joints, speed=30):
-    if not self.valid_joints(joints):
-        print("JOINTS not valid.", joints)
-        joints = self.clip_joints(joints)
-
-    joints = [round(x * 1000 * 180 / np.pi) for x in joints]
-    self.piper.ModeCtrl(0x01, 0x01, speed, 0x00)
-    time.sleep(0.005)
-    self.piper.JointCtrl(*joints)
-
-    e = self.calc_distance(joints, self.get_joints())
-    return e > 1000
-
-
-def set_gripper(self, distance, effort=500, delay=1.0):
-    if not self.valid_gripper(distance):
-        print("GRIPPER not valid.", distance)
-        distance = self.clip_gripper(distance)
-
-    distance = abs(round(distance * 100 * 1000))
-    self.piper.GripperCtrl(distance, effort, 0x01, 0x00)
-    time.sleep(delay)
-
-    state = self.get_gripper_state()
-    e = self.calc_distance([distance], [state[0]])
-    return e > 1000 and abs(state[1]) < effort
-
-
-def set_end_pose(self, x, y, z, rx, ry, rz, speed=50):
-    position = [x, y, z, rx, ry, rz]
-    position = [i * 1000 for i in position]
-
-    self.piper.ModeCtrl(0x01, 0x00, speed, 0x00)
-    time.sleep(0.005)
-    self.piper.EndPoseCtrl(*position)
-
-    status = self.piper.GetArmStatus().arm_status.arm_status
-    if status == 0x04:
-        return False
-    return True
-
-
-def calc_joints(self, x0, y0, z0, rx, ry, rz):
-    L01 = self.L01
-    L12 = self.L12
-    L23 = self.L23
-    L34 = self.L34
-
-    x1 = x0 - L34 * np.cos(ry) * np.cos(rz)
-    y1 = y0 - L34 * np.cos(ry) * np.sin(rz)
-    z1 = z0 - L34 * np.sin(ry)
-
-    c = np.arctan2(y1, x1)
-    x2 = (x1 ** 2 + y1 ** 2) ** 0.5
-    y2 = 0
-    z2 = z1
-
-    print(x0, y0, z0)
-    print(x1, y1, z1)
-    print(x2, y2, z2)
-    if not (L12 + L23) >= (x2 ** 2 + z2 ** 2) ** 0.5 >= 150:
-        print("cannot reach that point!", x0, y0, z0)
-        return []
-
-    Lk = (x2 ** 2 + z2 ** 2) ** 0.5
-    b = np.pi - np.arccos((L12 ** 2 + L23 ** 2 - Lk ** 2) / (2 * L12 * L23))
-    a = np.pi / 2 - np.arctan2(z2, x2) - np.arccos((L12 ** 2 + Lk ** 2 - L23 ** 2) / (2 * L12 * Lk))
-    a = a + np.pi / 2 - 8 * np.pi / 180
-    b = b - np.pi + 17.5 * np.pi / 180
-
-    R1 = rpy_to_rotation_matrix([0, 0, c])
-    R2 = rpy_to_rotation_matrix([0, a, 0])
-    R3 = rpy_to_rotation_matrix([0, b, 0])
-    R_total = R1 @ R2 @ R3
-    rpy = rotation_matrix_to_rpy(R_total)
-
-    rpy = rpy_to_rotation_matrix([rx, ry, rz]) @ np.linalg.inv(R_total)
-    rpy = rotation_matrix_to_rpy(rpy)
-    # R_curr = rpy_to_rotation_matrix(rpy)
-    # R_targ = rpy_to_rotation_matrix([rx, ry, rz])
-    # R_rel = R_curr.T @ R_targ
-    # # R_rel = R_targ @ R_curr.T
-    # rpy = rotation_matrix_to_rpy(R_rel)
-    print(rpy[1], -a - b - ry)
-    print(np.linalg.inv(R_total) @ R_total)
-
-    R_test = get_zyz_matrix(rx, ry, rz)
-    solutions = solve_6dof_wrist_zyz(R_test)
-    print(solutions)
-    rpy = [x * np.pi / 180 for x in solutions['solution_1']]
-    rpy[1] = -rpy[1]
-    return [c, a, b, *rpy]
 def move_to_bar(a):
-    if a==1:
-        turn_to(0, 0.2)
-        nigga_meter=1000
+    if a == 1:
+        # 這裡的 0.128... 是絕對 yaw 角，turn_to 會使用 get_yaw_from_odom() 進行旋轉
+        turn_to(angle_bar, 0.2)
+        nigga_meter = 1000
         for iii in range(round(nigga_meter / 100)):
             move(-0.2, 0)
             time.sleep(0.5)
@@ -410,24 +285,59 @@ def move_to_bar(a):
             time.sleep(0.5)
 
 
+def get_real_xyz(dp, x, y, num):
+    a1 = 49.5
+    b1 = 60.0
+    if num == 2:
+        a1 = 55.0
+        b1 = 86.0
+    a = a1 * np.pi / 180
+    b = b1 * np.pi / 180
+    d = dp[y][x]
+    h, w = dp.shape[:2]
+    if d == 0:
+        for k in range(1, 15, 1):
+            if d == 0 and y - k >= 0:
+                for j in range(x - k, x + k, 1):
+                    if not (0 <= j < w): continue
+                    d = dp[y - k][j]
+                    if d > 0: break
+            if d == 0 and x + k < w:
+                for i in range(y - k, y + k, 1):
+                    if not (0 <= i < h): continue
+                    d = dp[i][x + k]
+                    if d > 0: break
+            if d == 0 and y + k < h:
+                for j in range(x + k, x - k, -1):
+                    if not (0 <= j < w): continue
+                    d = dp[y + k][j]
+                    if d > 0: break
+            if d == 0 and x - k >= 0:
+                for i in range(y + k, y - k, -1):
+                    if not (0 <= i < h): continue
+                    d = dp[i][x - k]
+                    if d > 0: break
+            if d > 0: break
+    x = int(x) - int(w // 2)
+    y = int(y) - int(h // 2)
+    real_y = round(y * 2 * d * np.tan(a / 2) / h)
+    real_x = round(x * 2 * d * np.tan(b / 2) / w)
+    return real_x, real_y, d
+
+
 if __name__ == "__main__":
     rospy.init_node("demo")
     rospy.loginfo("demo node start!")
-    print("cmd_vel")
     _cmd_vel = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
-    print("speak")
     s = ""
     rospy.Subscriber("/voice/text", Voice, callback_voice)
-    print("gemini rgb")
     _frame1 = None
     _sub_down_cam_image1 = rospy.Subscriber("/cam1/color/image_raw", Image, callback_image1)
-    print("gemini depth")
     _depth1 = None
     _sub_down_cam_depth1 = rospy.Subscriber("/cam1/depth/image_raw", Image, callback_depth1)
-    dnn_yolo = Yolov8("yolov8n", device_name="GPU")
+    net_pose = HumanPoseEstimation(device_name="GPU")
     _odom = None
     rospy.Subscriber("/odom", Odometry, callback_odom)
-    chassis = RobotChassis()
     cv2.namedWindow("frame", cv2.WINDOW_NORMAL)
     follow_cnt = 0
     action = 0
@@ -436,248 +346,150 @@ if __name__ == "__main__":
     confirm_command = 0
     arm = KindaPiper()
     arm.connect("can0")
+    tf_listener = tf.TransformListener()
     arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
     arm.set_gripper(1)
-    # left positive
-    '''
-    turn(90*np.pi/180)
+
+    # 使用里程計獲取初始朝向
+    time.sleep(1)  # 等待 TF 緩衝
+    startx, starty, _1yaw = get_odom_pose()
+    print("Initial Yaw:", _1yaw)
+
+    turn(first_angle * np.pi / 180)
     nigga_meter = 2000
     for iii in range(round(nigga_meter / 100)):
         move(0.2, 0)
-        time.sleep(0.5)'''
+        time.sleep(0.5)
     speak("I am ready")
-    meter = 1000
-    print("0")
     finded_niggasss = 0
-    
-    speak_j = ""
-    model = YOLO("yolov8n-pose.pt")
-    '''
-    speak("To all audience please put your hand under your shoulder if you are not calling for an order")
-    speak("repeat")
-    speak("To all audience please put your hand under your shoulder if you are not calling for an order")
-    time.sleep(1)
-    speak("thank you")'''
-    
-    target_max_depth=6000
-    evidence_cnt=1
-    mini_depth=9999999
+
+    target_max_depth = 6000
+    evidence_cnt = 1
+    mini_depth = 9999999
+
     for ifffff in [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 3, 4, 5, 6]:
-        step_action = 1
-        step="turn"
-        action = "find"
+        step_action = 0
         depth_ddd = 0
-        skip_voice_cnt = 0
-        repeat_cnt = 0
-        repeatnigga = 0
         if finded_niggasss >= 2:
             break
         while not rospy.is_shutdown():
-            # voice check
-            # break
-            now1 = datetime.now()
-            current_time = now1.strftime("%H:%M:%S")
             rospy.Rate(10).sleep()
-            confirm_command = 0
-            if _frame1 is None:
-                print("no frame")
-            if _depth1 is None:
-                print("no depth")
+            if _frame1 is None or _depth1 is None:
+                continue
+
             code_image = _frame1.copy()
             code_depth = _depth1.copy()
-            catch_image = _frame1.copy()
-            h, w, c = code_image.shape
+
             if step_action == 0:
-                speak("hello customers, please raise your hand over your head if you need a order")
-                speak("don't put down your hands, until the robot come through, thank you")
                 step = "turn"
                 action = "find"
-                speak("finding customer")
                 step_action = 1
-                mini_depth=99999
+
             if step_action == 1:
-                # walk in front of the guy
                 if step == "turn":
                     move(0, -0.2)
                 if action == "find":
-                    image = _frame1.copy()
-                    result = model(image)[0]
-                    if result.boxes is not None and len(result.boxes) > 0:  # found person
-                        person_keypoints = result.keypoints.xy.cpu().numpy() # Shape: (num_persons, 17, 2)
-                        print(person_keypoints)
+                    poses = net_pose.forward(code_image)
+                    min_d = 9999
+                    t_idx = -1
+                    for i, pose in enumerate(poses):
+                        if (pose[5][2] == 0 and pose[9][2] == 0) or (pose[6][2] == 0 and pose[10][2] == 0):
+                            continue
+                        p5, p6, p9, p10 = list(map(int, pose[5][:2])), list(map(int, pose[6][:2])), list(
+                            map(int, pose[9][:2])), list(map(int, pose[10][:2]))
+                        cx, cy = (p5[0] + p6[0]) // 2, (p5[1] + p6[1]) // 2
+                        _, _, d = get_real_xyz(code_depth, cx, cy, 2)
+                        if d >= 5000 or d == 0: continue
+                        if (((pose[5][2] != 0 and pose[9][2] != 0) and (p5[1] > p9[1])) or (
+                                (p6[1] > p10[1]) and (pose[6][2] != 0 and pose[10][2] != 0))) and d <= min_d:
+                            t_idx, final_d, min_d = i, d, d
 
-                        # Loop through each person, then loop through their individual points to draw
-                        for person in person_keypoints:
-                            for kp in person:
-                                kx, ky = map(int, kp) # Unpack individual X, Y coordinates
-                                if kx != 0 and ky != 0: # Avoid drawing the (0,0) un-detected points
-                                    cv2.circle(image, (kx, ky), 10, (255, 0, 0), -1)
-
-                        try:
-                            # Index the FIRST person [0], and then their specific keypoint
-                            # YOLO keypoints: 0=nose, 9=left_wrist, 10=right_wrist
-                            first_person = person_keypoints[0] 
-                            
-                            nose = first_person[0]
-                            lwrist, rwrist = first_person[9], first_person[10]
-
-                            nose_x, nose_y = map(int, nose)
-                            lwrist_y = int(lwrist[1])
-                            rwrist_y = int(rwrist[1])
-
-                            if lwrist_y < nose_y or rwrist_y < nose_y:  # wrist above nose
-                                if 0 <= nose_x <= w and 0 <= nose_y <= h:  # check if position is valid
-                                    print("888888888888888888:")
-                                    x1, y1, x2, y2 = map(int, result.boxes.xyxy[0])
-                                    cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                                    
-                                    file_path = "/home/pcms/catkin_ws/src/beginner_tutorials/src/m1_evidence/"
-                                    name_photo = "proof" + str(evidence_cnt) + ".jpg"
-                                    file_path = file_path + name_photo
-                                    cv2.imwrite(file_path, image) # Added missing 'image' argument
-
-                                    person_depth = code_depth[nose_y][nose_x]
-                                    if person_depth != 0 and person_depth > 1500 and np.isfinite(person_depth) and person_depth < target_max_depth and person_depth < mini_depth:
-                                        step_action = -6
-                                        mini_depth = person_depth
-                        except Exception as e:
-                            print(f"error: {e}")
-
-            if step_action == -6:  # find & go to the customer - facing the customer
-                image = _frame1.copy()
-                result = model(image)[0]
-                
-                if result.boxes is not None and len(result.boxes) > 0:
-                    person_keypoints = result.keypoints.xy.cpu().numpy()
-                    first_person = person_keypoints[0]
-                    
-                    # YOLO Keypoints: 5 = Left Shoulder, 6 = Right Shoulder
-                    l_shoulder = first_person[5]
-                    r_shoulder = first_person[6]
-                    
-                    # Calculate torso center based on available shoulder data
-                    if l_shoulder[0] > 0 and r_shoulder[0] > 0:
-                        torso_center_x = (l_shoulder[0] + r_shoulder[0]) / 2.0
-                    elif l_shoulder[0] > 0:
-                        torso_center_x = l_shoulder[0]  # Fallback to left shoulder
-                    elif r_shoulder[0] > 0:
-                        torso_center_x = r_shoulder[0]  # Fallback to right shoulder
+                    if t_idx != -1:
+                        p5, p6 = list(map(int, poses[t_idx][5][:2])), list(map(int, poses[t_idx][6][:2]))
+                        cx, cy = (p5[0] + p6[0]) // 2, (p5[1] + p6[1]) // 2
+                        _, _, d = get_real_xyz(code_depth, cx, cy, 2)
+                        final_d = d
+                        step = "none"
+                        e = (code_image.shape[1] // 2) - cx
+                        v = np.clip(0.001 * e, -0.45, 0.45)
+                        move(0, v)
+                        if abs(e) <= 25:
+                            action = "front"
+                            time.sleep(1)
+                            speak("found you the customer who need order")
+                            time.sleep(3)
+                            move(0, 0)
                     else:
-                        torso_center_x = None  # No shoulders detected
-                    
-                    if torso_center_x is not None:
-                        image_mid = w // 2
-                        diff = 15   # Centering tolerance in pixels
-                        
-                        # Align robot with torso center
-                        if image_mid - diff <= torso_center_x <= image_mid + diff:
-                            step_action = 2
-                        else:
-                            if torso_center_x > image_mid:   # customer is to the right
-                                turn(10 / 180 * np.pi)
-                            else:                            # customer is to the left
-                                turn(-10 / 180 * np.pi)
-                    
+                        step = "turn"
+
+                if action == "front":
+                    meter = final_d - 1400
+                    time.sleep(2)
+                    for walk in range(round(meter / 100)):
+                        move(0.2, 0)
+                        time.sleep(0.5)
+                    action = "speak"
+                if action == "speak":
+                    step = "none"
+                    action = "none"
+                    step_action = 2
+
             if step_action == 2:
                 speak("dear customer, please tell me what you want")
-                speak("please tell me your order in complete sentence, for example: I want an apple and orange juice")
-                yn = 0
-                start_time = time.time()
                 playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
                 try:
-                    cmd = [
-                        "arecord",
-                        "-D", ALSA_DEVICE,
-                        "-d", str(RECORD_SECONDS),
-                        "-f", "S16_LE",
-                        "-r", str(SAMPLE_RATE),
-                        "-c", "1",
-                        AUDIO_PATH
-                    ]
-
+                    cmd = ["arecord", "-D", ALSA_DEVICE, "-d", str(RECORD_SECONDS), "-f", "S16_LE", "-r",
+                           str(SAMPLE_RATE), "-c", "1", AUDIO_PATH]
                     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
-                    print("⏹️ 錄音結束！")
                     data1 = call_ai_api(1).lower()
-
-                    if "Nothing" not in data1 or "nothing" not in data1:
+                    if "nothing" not in data1:
                         step_action = 99
                 except Exception as e:
-                    print(f"\n執行失敗: {e}")
-                if abs((start_time - time.time())) >= 25:
-                    speak("I can't get it, I gonna go back now")
-                    time.sleep(3)
-                    for walk in range(round(meter / 100)):
-                        move(-0.2, 0)
-                        time.sleep(0.5)
-                    time.sleep(2)
-                    for turn in range(30):
-                        move(0, -0.6)
-                        time.sleep(0.026)
-                    time.sleep(1)
-                    speak("hello customers, please raise your hand over your head if you need a order")
-                    step_action=1
-                    mini_depth = 99999
-                # data = command_list[i]
-                # continue
+                    print(f"Error: {e}")
+
             if step_action == 99:
                 speak("dear customer your order is")
-                time.sleep(0.3)
                 content_clean = data1.replace("```json", "").replace("```", "").strip()
-                data1 = json.loads(content_clean)
-                final_speak_to_guest = data1[0]+" and " +data1[1]
-                s = ""
-                print("Your order is **********************")
-                print(data1)
+                try:
+                    data1 = json.loads(content_clean)
+                except:
+                    step_action = 2
+                    continue
 
-                speak(final_speak_to_guest)
-                print("********************")
-                speak("please answer robot yes or robot no thank you")
-                speak("sound")
-                time.sleep(2)
-                playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
-                yn=-1
-                for i in range(3):
-                    try:
-                        cmd = [
-                            "arecord",
-                            "-D", ALSA_DEVICE,
-                            "-d", str(RECORD_SECONDS),
-                            "-f", "S16_LE",
-                            "-r", str(SAMPLE_RATE),
-                            "-c", "1",
-                            AUDIO_PATH
-                        ]
-
-                        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
-                        print("⏹️ 錄音結束！")
-                        data = call_ai_api(2)
-                        if "Nothing" not in data or "nothing" not in data:
-                            yn=1
-                        elif "no" in data:
-                            yn=2
-
-                    except Exception as e:
-                        print(f"\n執行失敗: {e}")
-                        step_action = 100
-                    speak("please repeat")
-                if yn==-1:
-                    speak("I can't get it, I gonna go back now")
-                    time.sleep(3)
-                    for walk in range(round(meter / 100)):
-                        move(-0.2, 0)
-                        time.sleep(0.5)
-                    step_action = 100
-                    for turn in range(30):
-                        move(0, -0.6)
-                        time.sleep(0.026)
-                    time.sleep(1)
-                    speak("hello customers, please raise your hand over your head if you need a order")
-                    step_action = 1
-                    mini_depth = 99999
-                elif yn==2:
+                if len(data1) != 2:
                     step_action = 2
                 else:
-                    step_action = 9
+                    final_speak_to_guest = data1[0] + " and " + data1[1]
+                    speak(final_speak_to_guest)
+                    speak("please answer robot yes or robot no thank you")
+                    playsound(
+                        '/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
+                    yn = -1
+                    for i in range(3):
+                        try:
+                            cmd = ["arecord", "-D", ALSA_DEVICE, "-d", "3", "-f", "S16_LE", "-r", str(SAMPLE_RATE),
+                                   "-c", "1", AUDIO_PATH]
+                            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+                            data = call_ai_api(2)
+                            if "no" in data and "robot" in data:
+                                yn = 2;
+                                break
+                            elif "yes" in data:
+                                yn = 1;
+                                break
+                        except:
+                            pass
+                        speak("please repeat")
+
+                    if yn == 1:
+                        step_action = 9
+                    elif yn == 2:
+                        step_action = 2
+                    else:
+                        speak("I can't get it, I gonna go back now")
+                        for walk in range(round(meter / 100)): move(-0.2, 0); time.sleep(0.5)
+                        step_action = 1
+
             if step_action == 9:
                 for walk in range(round(meter / 100)):
                     move(-0.2, 0)
@@ -686,62 +498,64 @@ if __name__ == "__main__":
                 speak("the customer want " + final_speak_to_guest)
                 time.sleep(2)
                 step_action = 10
+
             if step_action == 10:
-                startx, starty, _yaw = get_map_coords(0, 0)
+                # 獲取當前里程計坐標與朝向 (當前位置與朝向)
+                curr_x, curr_y, _guest_yaw = get_odom_pose()
+
+                # 去吧檯
                 move_to_bar(1)
-                speak("dear bar man please put "+data1[0]+" between my gripper until it close")
+                speak("dear bar man please put " + data1[0] + " between my gripper until it close")
                 time.sleep(5)
-                speak("5")
-                speak("4")
-                speak("3")
-                speak("2")
-                speak("1")
-                arm.set_gripper(1,1000)
+                speak("5 4 3 2 1")
+                arm.set_gripper(0, 1000)
+
+                # 從吧檯回來
                 move_to_bar(2)
-                turn_to(_yaw,0.2)
+                # 轉回剛才面對客席的方向 (使用里程計記錄的角度)
+                turn_to(_guest_yaw, 0.2)
+
                 speak("I gonna move")
-                move(0, 0)
-                for walk in range(round((meter) / 100)):
+                for walk in range(round(meter / 100)):
                     move(0.2, 0)
                     time.sleep(0.5)
-                time.sleep(3)
-                speak("dear customer, this is "+final_speak_to_guest[0])
-                arm.move_joint([600, 50, 0, 0, 0, 0], 10, 30)
+
+                speak("dear customer, this is " + data1[0])
+                arm.move_to_endpoint2(200, 400, 0, 0, 0, 0)
                 arm.set_gripper(1)
                 arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
-                for walk in range(round((meter) / 100)):
+
+                for walk in range(round(meter / 100)):
                     move(-0.2, 0)
                     time.sleep(0.5)
-                time.sleep(3)
+
+                # 第二次去吧檯
                 move_to_bar(1)
-                speak("dear bar man please put " + final_speak_to_guest[1] + " between my gripper until it close")
+                speak("dear bar man please put " + data1[1] + " between my gripper until it close")
                 time.sleep(5)
-                speak("5")
-                speak("4")
-                speak("3")
-                speak("2")
-                speak("1")
-                arm.set_gripper(1, 1000)
-                speak("I gonna move")
-                turn_to(_yaw, 0.2)
-                move(0, 0)
-                for walk in range(round((meter) / 100)):
+                speak("5 4 3 2 1")
+                arm.set_gripper(0, 1000)
+
+                move_to_bar(2)
+                turn_to(_guest_yaw, 0.2)
+
+                for walk in range(round(meter / 100)):
                     move(0.2, 0)
                     time.sleep(0.5)
-                time.sleep(3)
-                speak("dear customer, this is " + final_speak_to_guest[1])
-                arm.move_joint([600, 50, 0, 0, 0, 0], 10, 30)
+
+                speak("dear customer, this is " + data1[1])
+                arm.move_to_endpoint2(200, 400, 0, 0, 0, 0)
                 arm.set_gripper(1)
                 arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
-                for walk in range(round((meter) / 100)):
+
+                for walk in range(round(meter / 100)):
                     move(-0.2, 0)
                     time.sleep(0.5)
-                time.sleep(3)
+
                 finded_niggasss += 1
-                evidence_cnt+=1
                 break
-            cv2.imshow("frame", image)
-            key = cv2.waitKey(1)
-            if key in [ord('q'), 27]:
-                break
+
+            cv2.imshow("frame", code_image)
+            if cv2.waitKey(1) in [ord('q'), 27]: break
+
     speak("mission end")
