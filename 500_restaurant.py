@@ -23,9 +23,10 @@ from piper_sdk_demo import *
 import numpy as np
 import json
 
-angle_bar = 0
-first_angle = 90
-first_meter = 1000
+angle_bar = -1.523779044667379
+first_angle = 90 #left positive
+first_meter = 2000
+bar_dins_distance=1000
 def callback_image1(msg):
     global _frame1
     _frame1 = CvBridge().imgmsg_to_cv2(msg, "bgr8")
@@ -272,15 +273,12 @@ def get_zyz_matrix(t4, t5, t6):
 
 def move_to_bar(a):
     if a == 1:
-        # 這裡的 0.128... 是絕對 yaw 角，turn_to 會使用 get_yaw_from_odom() 進行旋轉
         turn_to(angle_bar, 0.2)
-        nigga_meter = 1000
-        for iii in range(round(nigga_meter / 100)):
+        for iii in range(round(bar_dins_distance / 100)):
             move(-0.2, 0)
             time.sleep(0.5)
     else:
-        nigga_meter = 1000
-        for iii in range(round(nigga_meter / 100)):
+        for iii in range(round(bar_dins_distance / 100)):
             move(0.2, 0)
             time.sleep(0.5)
 
@@ -347,6 +345,8 @@ if __name__ == "__main__":
     arm = KindaPiper()
     arm.connect("can0")
     tf_listener = tf.TransformListener()
+    startx, starty, _1yaw = get_odom_pose()
+    print("Initial Yaw:", _1yaw)
     arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
     arm.set_gripper(1)
 
@@ -354,19 +354,22 @@ if __name__ == "__main__":
     time.sleep(1)  # 等待 TF 緩衝
     startx, starty, _1yaw = get_odom_pose()
     print("Initial Yaw:", _1yaw)
-
+    speak("I am ready")
     turn(first_angle * np.pi / 180)
-    nigga_meter = 2000
+    nigga_meter = first_meter
     for iii in range(round(nigga_meter / 100)):
         move(0.2, 0)
         time.sleep(0.5)
-    speak("I am ready")
+    
     finded_niggasss = 0
 
     target_max_depth = 6000
     evidence_cnt = 1
     mini_depth = 9999999
-
+    speak("To all audience please put your hand under your shoulder if you are not calling for a order")
+    speak("repeat")
+    speak("To all audience please put your hand under your shoulder if you are not calling for a order")
+    speak("thank you")
     for ifffff in [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 3, 4, 5, 6]:
         step_action = 0
         depth_ddd = 0
@@ -381,8 +384,11 @@ if __name__ == "__main__":
             code_depth = _depth1.copy()
 
             if step_action == 0:
+                speak("hello customers, please raise your hand over your head if you need a order")
+                speak("don't put down your hands, until the robot come through, thank you")
                 step = "turn"
                 action = "find"
+                speak("finding customer")
                 step_action = 1
 
             if step_action == 1:
@@ -436,8 +442,9 @@ if __name__ == "__main__":
 
             if step_action == 2:
                 speak("dear customer, please tell me what you want")
-                playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
+                
                 try:
+                    playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
                     cmd = ["arecord", "-D", ALSA_DEVICE, "-d", str(RECORD_SECONDS), "-f", "S16_LE", "-r",
                            str(SAMPLE_RATE), "-c", "1", AUDIO_PATH]
                     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
@@ -461,15 +468,15 @@ if __name__ == "__main__":
                 else:
                     final_speak_to_guest = data1[0] + " and " + data1[1]
                     speak(final_speak_to_guest)
-                    speak("please answer robot yes or robot no thank you")
-                    playsound(
-                        '/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
+                    speak("please answer robot yes robot yes or robot no robot no, thank you")
                     yn = -1
                     for i in range(3):
                         try:
+                            playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
                             cmd = ["arecord", "-D", ALSA_DEVICE, "-d", "3", "-f", "S16_LE", "-r", str(SAMPLE_RATE),
                                    "-c", "1", AUDIO_PATH]
                             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+                            
                             data = call_ai_api(2)
                             if "no" in data and "robot" in data:
                                 yn = 2;
@@ -479,7 +486,7 @@ if __name__ == "__main__":
                                 break
                         except:
                             pass
-                        speak("please repeat")
+                        speak("please repeat wether i am correct")
 
                     if yn == 1:
                         step_action = 9
@@ -507,7 +514,11 @@ if __name__ == "__main__":
                 move_to_bar(1)
                 speak("dear bar man please put " + data1[0] + " between my gripper until it close")
                 time.sleep(5)
-                speak("5 4 3 2 1")
+                speak("5")
+                speak("4")
+                speak("3")
+                speak("2")
+                speak("1")
                 arm.set_gripper(0, 1000)
 
                 # 從吧檯回來
@@ -533,7 +544,11 @@ if __name__ == "__main__":
                 move_to_bar(1)
                 speak("dear bar man please put " + data1[1] + " between my gripper until it close")
                 time.sleep(5)
-                speak("5 4 3 2 1")
+                speak("5")
+                speak("4")
+                speak("3")
+                speak("2")
+                speak("1")
                 arm.set_gripper(0, 1000)
 
                 move_to_bar(2)
