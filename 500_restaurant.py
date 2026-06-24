@@ -190,7 +190,7 @@ def turn_to(angle, speed):
         
         e = normalize_angle(angle - yaw)
         print("turn_to_yaw", yaw,"err",e,"time",time.time() - start)
-        if abs(e) < 0.01 or time.time() - start > 15:
+        if abs(e) < 0.03 or time.time() - start > 15:
             break
 
         move(0.0, max_speed * speed * e)
