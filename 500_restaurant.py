@@ -23,10 +23,17 @@ from piper_sdk_demo import *
 import numpy as np
 import json
 
-angle_bar = -1.523779044667379
-first_angle = 90 #left positive
+angle_bar = 0
+first_angle = 90  # left positive
 first_meter = 2000
-bar_dins_distance=1000
+bar_dins_distance = 1000
+table_distance= 800
+
+def check_wether_turned_while_moving(target_yaw):
+    curr_yaw = get_yaw_from_odom()
+    error = normalize_angle(target_yaw - curr_yaw)
+    if abs(error) > 0.05:
+        turn_to(target_yaw, 0.2)
 def callback_image1(msg):
     global _frame1
     _frame1 = CvBridge().imgmsg_to_cv2(msg, "bgr8")
@@ -345,8 +352,6 @@ if __name__ == "__main__":
     arm = KindaPiper()
     arm.connect("can0")
     tf_listener = tf.TransformListener()
-    startx, starty, _1yaw = get_odom_pose()
-    print("Initial Yaw:", _1yaw)
     arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
     arm.set_gripper(1)
 
@@ -360,7 +365,7 @@ if __name__ == "__main__":
     for iii in range(round(nigga_meter / 100)):
         move(0.2, 0)
         time.sleep(0.5)
-    
+
     finded_niggasss = 0
 
     target_max_depth = 6000
@@ -370,7 +375,7 @@ if __name__ == "__main__":
     speak("repeat")
     speak("To all audience please put your hand under your shoulder if you are not calling for a order")
     speak("thank you")
-    for ifffff in [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 3, 4, 5, 6]:
+    for ifffff in [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 3, 4, 5, 6,11,2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 3, 4, 5, 6,11]:
         step_action = 0
         depth_ddd = 0
         if finded_niggasss >= 2:
@@ -379,13 +384,11 @@ if __name__ == "__main__":
             rospy.Rate(10).sleep()
             if _frame1 is None or _depth1 is None:
                 continue
-
             code_image = _frame1.copy()
             code_depth = _depth1.copy()
-
             if step_action == 0:
                 speak("hello customers, please raise your hand over your head if you need a order")
-                speak("don't put down your hands, until the robot come through, thank you")
+                speak("please don't put down your hands, until the robot come through, thank you")
                 step = "turn"
                 action = "find"
                 speak("finding customer")
@@ -429,9 +432,11 @@ if __name__ == "__main__":
                         step = "turn"
 
                 if action == "front":
-                    meter = final_d - 1400
+                    meter = final_d - 350 - 50 - table_distance
                     time.sleep(2)
+                    _, _, _1yaw = get_odom_pose()
                     for walk in range(round(meter / 100)):
+                        check_wether_turned_while_moving(_1yaw)
                         move(0.2, 0)
                         time.sleep(0.5)
                     action = "speak"
@@ -442,9 +447,10 @@ if __name__ == "__main__":
 
             if step_action == 2:
                 speak("dear customer, please tell me what you want")
-                
+
                 try:
-                    playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
+                    playsound(
+                        '/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
                     cmd = ["arecord", "-D", ALSA_DEVICE, "-d", str(RECORD_SECONDS), "-f", "S16_LE", "-r",
                            str(SAMPLE_RATE), "-c", "1", AUDIO_PATH]
                     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
@@ -472,11 +478,12 @@ if __name__ == "__main__":
                     yn = -1
                     for i in range(3):
                         try:
-                            playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
+                            playsound(
+                                '/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
                             cmd = ["arecord", "-D", ALSA_DEVICE, "-d", "3", "-f", "S16_LE", "-r", str(SAMPLE_RATE),
                                    "-c", "1", AUDIO_PATH]
                             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
-                            
+
                             data = call_ai_api(2)
                             if "no" in data and "robot" in data:
                                 yn = 2;
@@ -494,11 +501,17 @@ if __name__ == "__main__":
                         step_action = 2
                     else:
                         speak("I can't get it, I gonna go back now")
-                        for walk in range(round(meter / 100)): move(-0.2, 0); time.sleep(0.5)
+                        _, _, _1yaw = get_odom_pose()
+                        for walk in range(round(meter / 100)):
+                            check_wether_turned_while_moving(_1yaw)
+                            move(-0.2, 0)
+                            time.sleep(0.5)
                         step_action = 1
 
             if step_action == 9:
+                _, _, _1yaw = get_odom_pose()
                 for walk in range(round(meter / 100)):
+                    check_wether_turned_while_moving(_1yaw)
                     move(-0.2, 0)
                     time.sleep(0.5)
                 move(0, 0)
@@ -527,16 +540,19 @@ if __name__ == "__main__":
                 turn_to(_guest_yaw, 0.2)
 
                 speak("I gonna move")
+                _, _, _1yaw = get_odom_pose()
                 for walk in range(round(meter / 100)):
+                    check_wether_turned_while_moving(_1yaw)
                     move(0.2, 0)
                     time.sleep(0.5)
 
                 speak("dear customer, this is " + data1[0])
-                arm.move_to_endpoint2(200, 400, 0, 0, 0, 0)
+                arm.move_to_endpoint2(300, 400, 0, 0, 0, 0)
                 arm.set_gripper(1)
                 arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
-
+                _, _, _1yaw = get_odom_pose()
                 for walk in range(round(meter / 100)):
+                    check_wether_turned_while_moving(_1yaw)
                     move(-0.2, 0)
                     time.sleep(0.5)
 
@@ -553,17 +569,19 @@ if __name__ == "__main__":
 
                 move_to_bar(2)
                 turn_to(_guest_yaw, 0.2)
-
+                _, _, _1yaw = get_odom_pose()
                 for walk in range(round(meter / 100)):
+                    check_wether_turned_while_moving(_1yaw)
                     move(0.2, 0)
                     time.sleep(0.5)
 
                 speak("dear customer, this is " + data1[1])
-                arm.move_to_endpoint2(200, 400, 0, 0, 0, 0)
+                arm.move_to_endpoint2(300, 400, 0, 0, 0, 0)
                 arm.set_gripper(1)
                 arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
-
+                _, _, _1yaw = get_odom_pose()
                 for walk in range(round(meter / 100)):
+                    check_wether_turned_while_moving(_1yaw)
                     move(-0.2, 0)
                     time.sleep(0.5)
 
