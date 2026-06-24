@@ -27,13 +27,16 @@ angle_bar = 0.4620277986947793
 first_angle = 90  # left positive
 first_meter = 2000
 bar_dins_distance = 2000
-table_distance= 800
+table_distance = 800
+table_height = 600
 
 def check_wether_turned_while_moving(target_yaw):
     curr_yaw = get_yaw_from_odom()
     error = normalize_angle(target_yaw - curr_yaw)
     if abs(error) > 0.05:
         turn_to(target_yaw, 0.2)
+
+
 def callback_image1(msg):
     global _frame1
     _frame1 = CvBridge().imgmsg_to_cv2(msg, "bgr8")
@@ -187,9 +190,9 @@ def turn_to(angle, speed):
 
     while not rospy.is_shutdown():
         yaw = get_yaw_from_odom()
-        
+
         e = normalize_angle(angle - yaw)
-        print("turn_to_yaw", yaw,"err",e,"time",time.time() - start)
+        print("turn_to_yaw", yaw, "err", e, "time", time.time() - start)
         if abs(e) < 0.03 or time.time() - start > 15:
             break
 
@@ -200,9 +203,9 @@ def turn_to(angle, speed):
 
 
 def normalize_angle(angle):
-    while angle > 2*np.pi:
+    while angle > 2 * np.pi:
         angle -= 2 * np.pi
-    while angle < 2*-np.pi:
+    while angle < 2 * -np.pi:
         angle += 2 * np.pi
     return angle
 
@@ -277,6 +280,7 @@ def get_zyz_matrix(t4, t5, t6):
     R5 = np.array([[np.cos(t5), 0, np.sin(t5)], [0, 1, 0], [-np.sin(t5), 0, np.cos(t5)]])
     R6 = np.array([[np.cos(t6), -np.sin(t6), 0], [np.sin(t6), np.cos(t6), 0], [0, 0, 1]])
     return R4 @ R5 @ R6
+
 
 def move_to_bar(a):
     if a == 1:
@@ -358,9 +362,12 @@ if __name__ == "__main__":
     tf_listener = tf.TransformListener()
     arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
     arm.set_gripper(1)
+
     time.sleep(1)  # 等待 TF 緩衝
     startx, starty, _11yaw = get_odom_pose()
     print("Initial Yaw:", _11yaw)
+
+    input("did you mark the angle and dis?********************************")
     speak("I am ready")
     turn(first_angle * np.pi / 180)
     nigga_meter = first_meter
@@ -377,7 +384,8 @@ if __name__ == "__main__":
     speak("repeat")
     speak("To all audience please put your hand under your shoulder if you are not calling for a order")
     speak("thank you")
-    for ifffff in [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 3, 4, 5, 6,11,2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 3, 4, 5, 6,11]:
+    for ifffff in [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 3, 4, 5, 6, 11, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 3, 4, 5, 6,
+                   11]:
         step_action = 0
         depth_ddd = 0
         if finded_niggasss >= 2:
@@ -451,7 +459,7 @@ if __name__ == "__main__":
                 speak("dear customer, please tell me what you want")
 
                 try:
-                    #playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
+                    # playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
                     cmd = ["arecord", "-D", ALSA_DEVICE, "-d", str(RECORD_SECONDS), "-f", "S16_LE", "-r",
                            str(SAMPLE_RATE), "-c", "1", AUDIO_PATH]
                     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
@@ -462,7 +470,7 @@ if __name__ == "__main__":
                     print(f"Error: {e}")
 
             if step_action == 99:
-                
+
                 content_clean = data1.replace("```json", "").replace("```", "").strip()
                 try:
                     data1 = json.loads(content_clean)
@@ -482,7 +490,7 @@ if __name__ == "__main__":
                     yn = -1
                     for i in range(3):
                         try:
-                            #playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
+                            # playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
                             cmd = ["arecord", "-D", ALSA_DEVICE, "-d", "3", "-f", "S16_LE", "-r", str(SAMPLE_RATE),
                                    "-c", "1", AUDIO_PATH]
                             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
@@ -550,7 +558,7 @@ if __name__ == "__main__":
                     time.sleep(0.5)
 
                 speak("dear customer, this is " + data1[0])
-                arm.move_to_endpoint2(300, 400, 0, 0, 0, 0)
+                arm.move_to_endpoint2(300, table_height, 0, 0, 0, 0)
                 arm.set_gripper(1)
                 arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
                 _, _, _1yaw = get_odom_pose()
@@ -579,7 +587,7 @@ if __name__ == "__main__":
                     time.sleep(0.5)
 
                 speak("dear customer, this is " + data1[1])
-                arm.move_to_endpoint2(300, 400, 0, 0, 0, 0)
+                arm.move_to_endpoint2(300, table_height, 0, 0, 0, 0)
                 arm.set_gripper(1)
                 arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
                 _, _, _1yaw = get_odom_pose()
