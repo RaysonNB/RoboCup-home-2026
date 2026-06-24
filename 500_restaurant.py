@@ -23,12 +23,12 @@ from piper_sdk_demo import *
 import numpy as np
 import json
 
-angle_bar = 0.4620277986947793
-first_angle = 90  # left positive
+angle_bar = -0.007028112449799195
+angle_one = -0.007028112449799195 # left positive
 first_meter = 2000
-bar_dins_distance = 2000
-table_distance = 800
-table_height = 600
+bar_dins_distance = 2000-500
+table_distance = 800 +200
+table_height = 450
 
 def check_wether_turned_while_moving(target_yaw):
     curr_yaw = get_yaw_from_odom()
@@ -193,7 +193,7 @@ def turn_to(angle, speed):
 
         e = normalize_angle(angle - yaw)
         print("turn_to_yaw", yaw, "err", e, "time", time.time() - start)
-        if abs(e) < 0.03 or time.time() - start > 15:
+        if abs(e) < 0.015 or time.time() - start > 15:
             break
 
         move(0.0, max_speed * speed * e)
@@ -368,11 +368,20 @@ if __name__ == "__main__":
     print("Initial Yaw:", _11yaw)
 
     input("did you mark the angle and dis?********************************")
+    startx, starty, _11yaw = get_odom_pose()
+    print("Initial Yaw:", _11yaw)
+    code_image = _frame1.copy()
+    code_depth = _depth1.copy()
+    print("image check")
+    input("did you mark the angle and dis?********************************")
     speak("I am ready")
-    turn(first_angle * np.pi / 180)
+    turn_to(angle_one,0.4)
     nigga_meter = first_meter
+    _, _, _1yaw = get_odom_pose()
+            
     for iii in range(round(nigga_meter / 100)):
         move(0.2, 0)
+        check_wether_turned_while_moving(_1yaw)
         time.sleep(0.5)
 
     finded_niggasss = 0
@@ -459,7 +468,7 @@ if __name__ == "__main__":
                 speak("dear customer, please tell me what you want")
 
                 try:
-                    # playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
+                    playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/bibi.mp3')
                     cmd = ["arecord", "-D", ALSA_DEVICE, "-d", str(RECORD_SECONDS), "-f", "S16_LE", "-r",
                            str(SAMPLE_RATE), "-c", "1", AUDIO_PATH]
                     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
@@ -490,7 +499,7 @@ if __name__ == "__main__":
                     yn = -1
                     for i in range(3):
                         try:
-                            # playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
+                            playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/bibi.mp3')
                             cmd = ["arecord", "-D", ALSA_DEVICE, "-d", "3", "-f", "S16_LE", "-r", str(SAMPLE_RATE),
                                    "-c", "1", AUDIO_PATH]
                             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
