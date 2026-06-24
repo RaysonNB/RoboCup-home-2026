@@ -23,10 +23,10 @@ from piper_sdk_demo import *
 import numpy as np
 import json
 
-angle_bar = 0
+angle_bar = 0.4620277986947793
 first_angle = 90  # left positive
 first_meter = 2000
-bar_dins_distance = 1000
+bar_dins_distance = 2000
 table_distance= 800
 
 def check_wether_turned_while_moving(target_yaw):
@@ -183,13 +183,14 @@ def callback_odom(msg):
 
 def turn_to(angle, speed):
     max_speed = 1.82
-    start = rospy.get_time()
+    start = time.time()
 
     while not rospy.is_shutdown():
         yaw = get_yaw_from_odom()
+        
         e = normalize_angle(angle - yaw)
-
-        if abs(e) < 0.01 or rospy.get_time() - start > 8:
+        print("turn_to_yaw", yaw,"err",e,"time",time.time() - start)
+        if abs(e) < 0.01 or time.time() - start > 15:
             break
 
         move(0.0, max_speed * speed * e)
@@ -199,9 +200,9 @@ def turn_to(angle, speed):
 
 
 def normalize_angle(angle):
-    while angle > np.pi:
+    while angle > 2*np.pi:
         angle -= 2 * np.pi
-    while angle < -np.pi:
+    while angle < 2*-np.pi:
         angle += 2 * np.pi
     return angle
 
@@ -277,17 +278,20 @@ def get_zyz_matrix(t4, t5, t6):
     R6 = np.array([[np.cos(t6), -np.sin(t6), 0], [np.sin(t6), np.cos(t6), 0], [0, 0, 1]])
     return R4 @ R5 @ R6
 
-
 def move_to_bar(a):
     if a == 1:
-        turn_to(angle_bar, 0.2)
+        turn_to(angle_bar, 0.4)
+        _, _, _1yaw = get_odom_pose()
         for iii in range(round(bar_dins_distance / 100)):
             move(-0.2, 0)
             time.sleep(0.5)
+            check_wether_turned_while_moving(_1yaw)
     else:
+        _, _, _1yaw = get_odom_pose()
         for iii in range(round(bar_dins_distance / 100)):
             move(0.2, 0)
             time.sleep(0.5)
+            check_wether_turned_while_moving(_1yaw)
 
 
 def get_real_xyz(dp, x, y, num):
@@ -354,11 +358,9 @@ if __name__ == "__main__":
     tf_listener = tf.TransformListener()
     arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
     arm.set_gripper(1)
-
-    # 使用里程計獲取初始朝向
     time.sleep(1)  # 等待 TF 緩衝
-    startx, starty, _1yaw = get_odom_pose()
-    print("Initial Yaw:", _1yaw)
+    startx, starty, _11yaw = get_odom_pose()
+    print("Initial Yaw:", _11yaw)
     speak("I am ready")
     turn(first_angle * np.pi / 180)
     nigga_meter = first_meter
@@ -449,8 +451,7 @@ if __name__ == "__main__":
                 speak("dear customer, please tell me what you want")
 
                 try:
-                    playsound(
-                        '/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
+                    #playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
                     cmd = ["arecord", "-D", ALSA_DEVICE, "-d", str(RECORD_SECONDS), "-f", "S16_LE", "-r",
                            str(SAMPLE_RATE), "-c", "1", AUDIO_PATH]
                     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
@@ -461,25 +462,27 @@ if __name__ == "__main__":
                     print(f"Error: {e}")
 
             if step_action == 99:
-                speak("dear customer your order is")
+                
                 content_clean = data1.replace("```json", "").replace("```", "").strip()
                 try:
                     data1 = json.loads(content_clean)
                 except:
+                    speak("please repeat")
                     step_action = 2
                     continue
 
                 if len(data1) != 2:
+                    speak("please repeat")
                     step_action = 2
                 else:
+                    speak("dear customer your order is")
                     final_speak_to_guest = data1[0] + " and " + data1[1]
                     speak(final_speak_to_guest)
                     speak("please answer robot yes robot yes or robot no robot no, thank you")
                     yn = -1
                     for i in range(3):
                         try:
-                            playsound(
-                                '/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
+                            #playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/mixkit-modern-classic-door-bell-sound-113.mp3')
                             cmd = ["arecord", "-D", ALSA_DEVICE, "-d", "3", "-f", "S16_LE", "-r", str(SAMPLE_RATE),
                                    "-c", "1", AUDIO_PATH]
                             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
@@ -537,7 +540,7 @@ if __name__ == "__main__":
                 # 從吧檯回來
                 move_to_bar(2)
                 # 轉回剛才面對客席的方向 (使用里程計記錄的角度)
-                turn_to(_guest_yaw, 0.2)
+                turn_to(_guest_yaw, 0.4)
 
                 speak("I gonna move")
                 _, _, _1yaw = get_odom_pose()
@@ -568,7 +571,7 @@ if __name__ == "__main__":
                 arm.set_gripper(0, 1000)
 
                 move_to_bar(2)
-                turn_to(_guest_yaw, 0.2)
+                turn_to(_guest_yaw, 0.4)
                 _, _, _1yaw = get_odom_pose()
                 for walk in range(round(meter / 100)):
                     check_wether_turned_while_moving(_1yaw)
