@@ -23,8 +23,8 @@ from piper_sdk_demo import *
 import numpy as np
 import json
 
-angle_bar = -0.007028112449799195
-angle_one = -0.007028112449799195  # left positive
+angle_bar = 0.5907087299347479
+angle_one = 0.5907087299347479  # left positive
 first_meter = 2000
 bar_dins_distance = 2000 - 500
 table_distance = 800 + 200
@@ -34,7 +34,7 @@ openrouter=1
 def check_wether_turned_while_moving(target_yaw):
     curr_yaw = get_yaw_from_odom()
     error = normalize_angle(target_yaw - curr_yaw)
-    if abs(error) > 0.05:
+    if abs(error) > 0.04:
         turn_to(target_yaw, 0.2)
 
 
@@ -89,7 +89,7 @@ def send_media_task(endpoint, file_path, prompt, file_key):
             data = {'prompt': prompt}
             print(f"[*] 正在傳送 {file_path} 到 {endpoint}...")
 
-            response = requests.post(f"{BASE_URL}{endpoint}", files=files, data=data, timeout=60)
+            response = requests.post(f"{BASE_URL}{endpoint}", files=files, data=data, timeout=15)
 
         if response.status_code == 200:
             return response.json().get('ans')
@@ -173,8 +173,10 @@ def call_ai_api(a):
         except Exception as e:
             print(f"[AI 發生錯誤]: {e}")
     else:
+        print("path",AUDIO_PATH)
         audio_ans = send_media_task("/Fambot", AUDIO_PATH, optimized_prompt, "audio")
         print(f"[AI response]: {audio_ans}")
+        return audio_ans
 
 
 _image = None
@@ -210,8 +212,7 @@ def turn_to(angle, speed):
         yaw = get_yaw_from_odom()
 
         e = normalize_angle(angle - yaw)
-        print("turn_to_yaw", yaw, "err", e, "time", time.time() - start)
-        if abs(e) < 0.015 or time.time() - start > 15:
+        if abs(e) < 0.01 or time.time() - start > 11:
             break
 
         move(0.0, max_speed * speed * e)
@@ -451,15 +452,16 @@ if __name__ == "__main__":
                     min_d = 9999
                     t_idx = -1
                     for i, pose in enumerate(poses):
-                        if (pose[5][2] == 0 and pose[9][2] == 0) or (pose[6][2] == 0 and pose[10][2] == 0):
+                        if (pose[0][2] == 0 and pose[9][2] == 0) or (pose[0][2] == 0 and pose[10][2] == 0):
                             continue
-                        p5, p6, p9, p10 = list(map(int, pose[5][:2])), list(map(int, pose[6][:2])), list(
-                            map(int, pose[9][:2])), list(map(int, pose[10][:2]))
+                        p5, p6, p9, p10,p0 = list(map(int, pose[5][:2])), list(map(int, pose[6][:2])), list(
+                            map(int, pose[9][:2])), list(map(int, pose[10][:2])),list(map(int, pose[0][:2]))
+                            
                         cx, cy = (p5[0] + p6[0]) // 2, (p5[1] + p6[1]) // 2
                         _, _, d = get_real_xyz(code_depth, cx, cy, 2)
-                        if d >= 5000 or d == 0: continue
-                        if (((pose[5][2] != 0 and pose[9][2] != 0) and (p5[1] > p9[1])) or (
-                                (p6[1] > p10[1]) and (pose[6][2] != 0 and pose[10][2] != 0))) and d <= min_d:
+                        if d >= target_max_depth or d == 0: continue
+                        if (((pose[0][2] != 0 and pose[9][2] != 0) and (p0[1] > p9[1])) or (
+                                (p0[1] > p10[1]) and (pose[0][2] != 0 and pose[10][2] != 0))) and d <= min_d:
                             t_idx, final_d, min_d = i, d, d
 
                     if t_idx != -1:
@@ -509,11 +511,11 @@ if __name__ == "__main__":
                         check_wether_turned_while_moving(_1yaw)
                         move(-0.2, 0)
                         time.sleep(0.5)
-                    step_action = 1
+                    step_action = 0
                     step_action_2_cnt=0
                 else:
+                    speak("dear customer, please tell me what you want")
                     if step_action_2_cnt==0:
-                        speak("dear customer, please tell me what you want")
                         speak("please answer it in complete sentence with louder voice, for example I want apple and orange juice")
                     step_action_2_cnt+=1
                     try:
@@ -521,7 +523,7 @@ if __name__ == "__main__":
                         cmd = ["arecord", "-D", ALSA_DEVICE, "-d", str(RECORD_SECONDS), "-f", "S16_LE", "-r",
                                str(SAMPLE_RATE), "-c", "1", AUDIO_PATH]
                         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
-                        data1 = call_ai_api(1).lower()
+                        data1 = call_ai_api(1)
                         if "nothing" not in data1:
                             step_action = 99
                     except Exception as e:
@@ -576,12 +578,12 @@ if __name__ == "__main__":
                             check_wether_turned_while_moving(_1yaw)
                             move(-0.2, 0)
                             time.sleep(0.5)
-                        step_action = 1
+                        step_action = 0
 
             if step_action == 9:
                 _, _, _1yaw = get_odom_pose()
                 for iii in range(round(200 / 100)):
-                    move(0.2, 0)
+                    move(-0.2, 0)
                     time.sleep(0.5)
                 check_wether_turned_while_moving(_1yaw)
                 for walk in range(round((meter-200) / 100)):
@@ -596,7 +598,11 @@ if __name__ == "__main__":
             if step_action == 10:
                 curr_x, curr_y, _guest_yaw = get_odom_pose()
                 move_to_bar(1)
-                speak("dear bar man please put " + data1[0] + data1[0] + data1[0] + " between my gripper until it close")
+                speak("dear bar man please put")
+                speak(data1[0])
+                speak(data1[0])
+                speak(data1[0])
+                speak("between my gripper until it close")
                 time.sleep(5)
                 speak("5")
                 speak("4")
@@ -622,7 +628,7 @@ if __name__ == "__main__":
                 arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
                 _, _, _1yaw = get_odom_pose()
                 for iii in range(round(200 / 100)):
-                    move(0.2, 0)
+                    move(-0.2, 0)
                     time.sleep(0.5)
                 check_wether_turned_while_moving(_1yaw)
                 for walk in range(round((meter-200) / 100)):
@@ -630,7 +636,11 @@ if __name__ == "__main__":
                     move(-0.2, 0)
                     time.sleep(0.5)
                 move_to_bar(1)
-                speak("dear bar man please put " + data1[1] + " between my gripper until it close")
+                speak("dear bar man please put")
+                speak(data1[1])
+                speak(data1[1])
+                speak(data1[1])
+                speak("between my gripper until it close")
                 time.sleep(5)
                 speak("5")
                 speak("4")
@@ -655,7 +665,7 @@ if __name__ == "__main__":
                 arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
                 _, _, _1yaw = get_odom_pose()
                 for iii in range(round(200 / 100)):
-                    move(0.2, 0)
+                    move(-0.2, 0)
                     time.sleep(0.5)
                 check_wether_turned_while_moving(_1yaw)
                 for walk in range(round((meter-200) / 100)):
