@@ -24,11 +24,12 @@ import numpy as np
 import json
 
 angle_bar = -0.007028112449799195
-angle_one = -0.007028112449799195 # left positive
+angle_one = -0.007028112449799195  # left positive
 first_meter = 2000
-bar_dins_distance = 2000-500
-table_distance = 800 +200
+bar_dins_distance = 2000 - 500
+table_distance = 800 + 200
 table_height = 450
+openrouter=1
 
 def check_wether_turned_while_moving(target_yaw):
     curr_yaw = get_yaw_from_odom()
@@ -80,83 +81,100 @@ ALSA_DEVICE = "pulse"
 def encode_audio(audio_path):
     with open(audio_path, "rb") as audio_file:
         return base64.b64encode(audio_file.read()).decode('utf-8')
+BASE_URL = "http://172.22.11.147:8888"
+def send_media_task(endpoint, file_path, prompt, file_key):
+    try:
+        with open(file_path, 'rb') as f:
+            files = {file_key: f}
+            data = {'prompt': prompt}
+            print(f"[*] 正在傳送 {file_path} 到 {endpoint}...")
 
+            response = requests.post(f"{BASE_URL}{endpoint}", files=files, data=data, timeout=60)
 
+        if response.status_code == 200:
+            return response.json().get('ans')
+        else:
+            return f"伺服器錯誤: {response.text}"
+    except Exception as e:
+        return f"連線失敗: {e}"
 def call_ai_api(a):
     print(f"\n[AI] 正在分析訂單錄音檔...")
-    try:
-        base64_audio = encode_audio(AUDIO_PATH)
-        if a == 1:
-            optimized_prompt = '''
-                You are an expert order-taking assistant. The provided audio is a recording of a customer placing an order,
-                but it contains a lot of noisy background sounds. Please perform the following tasks:
-                1. Ignore all background noise, wind, music, or chimes.
-                2. Listen closely to the human voice and transcribe exactly what the customer said (English).
-                answer it in ths format for example: ["apple","coffee"]
-                just answer me with a python list
-                if the order is two apple, please answer me in ["apple", "apple"]
-                if nothing is in the audio answer: ["nothing'], don't give me extral text
-                Reply with only one of these two exact phrases:
-                1. ["nothing']
-                2. ["item1", "item2"]
-                '''
-        else:
-            optimized_prompt = '''
-            Listen to the customer's response in the audio. Reply with only one of these three exact phrases:
-            1. robot yes
-            2. robot no
-            3. nothing answer from the customer
-            Do not add any extra words or punctuation.
+    if a == 1:
+        optimized_prompt = '''
+            You are an expert order-taking assistant. The provided audio is a recording of a customer placing an order,
+            but it contains a lot of noisy background sounds. Please perform the following tasks:
+            1. Ignore all background noise, wind, music, or chimes.
+            2. Listen closely to the human voice and transcribe exactly what the customer said (English).
+            answer it in ths format for example: ["apple","coffee"]
+            just answer me with a python list
+            if the order is two apple, please answer me in ["apple", "apple"]
+            if nothing is in the audio answer: ["nothing'], don't give me extral text
+            Reply with only one of these two exact phrases:
+            1. ["nothing']
+            2. ["item1", "item2"]
             '''
-
-        payload = {
-            "model": MODEL,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": optimized_prompt
-                        },
-                        {
-                            "type": "input_audio",
-                            "input_audio": {
-                                "data": base64_audio,
-                                "format": "wav"
+    else:
+        optimized_prompt = '''
+        Listen to the customer's response in the audio. Reply with only one of these three exact phrases:
+        1. robot yes
+        2. robot no
+        3. nothing answer from the customer
+        Do not add any extra words or punctuation.
+        '''
+    if openrouter == 0:
+        try:
+            base64_audio = encode_audio(AUDIO_PATH)
+            payload = {
+                "model": MODEL,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": optimized_prompt
+                            },
+                            {
+                                "type": "input_audio",
+                                "input_audio": {
+                                    "data": base64_audio,
+                                    "format": "wav"
+                                }
                             }
-                        }
-                    ]
-                }
-            ]
-        }
+                        ]
+                    }
+                ]
+            }
 
-        start_time = time.time()
-        response = requests.post(
-            url="https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {API_KEY}",
-                "Content-Type": "application/json",
-            },
-            data=json.dumps(payload),
-            timeout=20
-        )
-        end_time = time.time()
+            start_time = time.time()
+            response = requests.post(
+                url="https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                data=json.dumps(payload),
+                timeout=20
+            )
+            end_time = time.time()
 
-        result = response.json()
-        print("\n" + "=" * 40)
-        if 'choices' in result:
-            content = result['choices'][0]['message']['content']
-            print(f"[AI 訂單分析結果]:\n{content}")
-            print("-" * 40)
-            return content
-        else:
-            print("[AI 錯誤]: API 回傳異常")
-            print(json.dumps(result, indent=2))
-        print("=" * 40 + "\n")
+            result = response.json()
+            print("\n" + "=" * 40)
+            if 'choices' in result:
+                content = result['choices'][0]['message']['content']
+                print(f"[AI 訂單分析結果]:\n{content}")
+                print("-" * 40)
+                return content
+            else:
+                print("[AI 錯誤]: API 回傳異常")
+                print(json.dumps(result, indent=2))
+            print("=" * 40 + "\n")
 
-    except Exception as e:
-        print(f"[AI 發生錯誤]: {e}")
+        except Exception as e:
+            print(f"[AI 發生錯誤]: {e}")
+    else:
+        audio_ans = send_media_task("/Fambot", AUDIO_PATH, optimized_prompt, "audio")
+        print(f"[AI response]: {audio_ans}")
 
 
 _image = None
@@ -286,13 +304,21 @@ def move_to_bar(a):
     if a == 1:
         turn_to(angle_bar, 0.4)
         _, _, _1yaw = get_odom_pose()
-        for iii in range(round(bar_dins_distance / 100)):
+        for iii in range(round(200 / 100)):
+            move(-0.2, 0)
+            time.sleep(0.5)
+        check_wether_turned_while_moving(_1yaw)
+        for iii in range(round((bar_dins_distance-200) / 100)):
             move(-0.2, 0)
             time.sleep(0.5)
             check_wether_turned_while_moving(_1yaw)
     else:
         _, _, _1yaw = get_odom_pose()
-        for iii in range(round(bar_dins_distance / 100)):
+        for iii in range(round(200 / 100)):
+            move(0.2, 0)
+            time.sleep(0.5)
+        check_wether_turned_while_moving(_1yaw)
+        for iii in range(round((bar_dins_distance - 200) / 100)):
             move(0.2, 0)
             time.sleep(0.5)
             check_wether_turned_while_moving(_1yaw)
@@ -375,11 +401,14 @@ if __name__ == "__main__":
     print("image check")
     input("did you mark the angle and dis?********************************")
     speak("I am ready")
-    turn_to(angle_one,0.4)
+    turn_to(angle_one, 0.4)
     nigga_meter = first_meter
     _, _, _1yaw = get_odom_pose()
-            
-    for iii in range(round(nigga_meter / 100)):
+    for iii in range(round(200 / 100)):
+        move(0.2, 0)
+        time.sleep(0.5)
+    check_wether_turned_while_moving(_1yaw)
+    for iii in range(round((nigga_meter-200) / 100)):
         move(0.2, 0)
         check_wether_turned_while_moving(_1yaw)
         time.sleep(0.5)
@@ -397,6 +426,7 @@ if __name__ == "__main__":
                    11]:
         step_action = 0
         depth_ddd = 0
+        step_action_2_cnt=0
         if finded_niggasss >= 2:
             break
         while not rospy.is_shutdown():
@@ -454,7 +484,11 @@ if __name__ == "__main__":
                     meter = final_d - 350 - 50 - table_distance
                     time.sleep(2)
                     _, _, _1yaw = get_odom_pose()
-                    for walk in range(round(meter / 100)):
+                    for iii in range(round(200 / 100)):
+                        move(0.2, 0)
+                        time.sleep(0.5)
+                    check_wether_turned_while_moving(_1yaw)
+                    for walk in range(round((meter-200) / 100)):
                         check_wether_turned_while_moving(_1yaw)
                         move(0.2, 0)
                         time.sleep(0.5)
@@ -463,33 +497,46 @@ if __name__ == "__main__":
                     step = "none"
                     action = "none"
                     step_action = 2
-
             if step_action == 2:
-                speak("dear customer, please tell me what you want")
-
-                try:
-                    playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/bibi.mp3')
-                    cmd = ["arecord", "-D", ALSA_DEVICE, "-d", str(RECORD_SECONDS), "-f", "S16_LE", "-r",
-                           str(SAMPLE_RATE), "-c", "1", AUDIO_PATH]
-                    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
-                    data1 = call_ai_api(1).lower()
-                    if "nothing" not in data1:
-                        step_action = 99
-                except Exception as e:
-                    print(f"Error: {e}")
+                if step_action_2_cnt>2:
+                    speak("I can't get it, I gonna go back now")
+                    _, _, _1yaw = get_odom_pose()
+                    for iii in range(round(200 / 100)):
+                        move(-0.2, 0)
+                        time.sleep(0.5)
+                    check_wether_turned_while_moving(_1yaw)
+                    for walk in range(round((meter - 200) / 100)):
+                        check_wether_turned_while_moving(_1yaw)
+                        move(-0.2, 0)
+                        time.sleep(0.5)
+                    step_action = 1
+                    step_action_2_cnt=0
+                else:
+                    if step_action_2_cnt==0:
+                        speak("dear customer, please tell me what you want")
+                        speak("please answer it in complete sentence with louder voice, for example I want apple and orange juice")
+                    step_action_2_cnt+=1
+                    try:
+                        playsound('/home/pcms/catkin_ws/src/beginner_tutorials/src/bibi.mp3')
+                        cmd = ["arecord", "-D", ALSA_DEVICE, "-d", str(RECORD_SECONDS), "-f", "S16_LE", "-r",
+                               str(SAMPLE_RATE), "-c", "1", AUDIO_PATH]
+                        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+                        data1 = call_ai_api(1).lower()
+                        if "nothing" not in data1:
+                            step_action = 99
+                    except Exception as e:
+                        print(f"Error: {e}")
 
             if step_action == 99:
-
                 content_clean = data1.replace("```json", "").replace("```", "").strip()
                 try:
                     data1 = json.loads(content_clean)
                 except:
-                    speak("please repeat")
+                    speak("please repeat your order")
                     step_action = 2
                     continue
-
                 if len(data1) != 2:
-                    speak("please repeat")
+                    speak("please repeat your order")
                     step_action = 2
                 else:
                     speak("dear customer your order is")
@@ -503,17 +550,16 @@ if __name__ == "__main__":
                             cmd = ["arecord", "-D", ALSA_DEVICE, "-d", "3", "-f", "S16_LE", "-r", str(SAMPLE_RATE),
                                    "-c", "1", AUDIO_PATH]
                             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
-
                             data = call_ai_api(2)
                             if "no" in data and "robot" in data:
-                                yn = 2;
+                                yn = 2
                                 break
                             elif "yes" in data:
-                                yn = 1;
+                                yn = 1
                                 break
                         except:
                             pass
-                        speak("please repeat wether i am correct")
+                        speak("please repeat whether i am correct")
 
                     if yn == 1:
                         step_action = 9
@@ -522,7 +568,11 @@ if __name__ == "__main__":
                     else:
                         speak("I can't get it, I gonna go back now")
                         _, _, _1yaw = get_odom_pose()
-                        for walk in range(round(meter / 100)):
+                        for iii in range(round(200 / 100)):
+                            move(-0.2, 0)
+                            time.sleep(0.5)
+                        check_wether_turned_while_moving(_1yaw)
+                        for walk in range(round((meter-200) / 100)):
                             check_wether_turned_while_moving(_1yaw)
                             move(-0.2, 0)
                             time.sleep(0.5)
@@ -530,7 +580,11 @@ if __name__ == "__main__":
 
             if step_action == 9:
                 _, _, _1yaw = get_odom_pose()
-                for walk in range(round(meter / 100)):
+                for iii in range(round(200 / 100)):
+                    move(0.2, 0)
+                    time.sleep(0.5)
+                check_wether_turned_while_moving(_1yaw)
+                for walk in range(round((meter-200) / 100)):
                     check_wether_turned_while_moving(_1yaw)
                     move(-0.2, 0)
                     time.sleep(0.5)
@@ -540,12 +594,9 @@ if __name__ == "__main__":
                 step_action = 10
 
             if step_action == 10:
-                # 獲取當前里程計坐標與朝向 (當前位置與朝向)
                 curr_x, curr_y, _guest_yaw = get_odom_pose()
-
-                # 去吧檯
                 move_to_bar(1)
-                speak("dear bar man please put " + data1[0] + " between my gripper until it close")
+                speak("dear bar man please put " + data1[0] + data1[0] + data1[0] + " between my gripper until it close")
                 time.sleep(5)
                 speak("5")
                 speak("4")
@@ -553,30 +604,31 @@ if __name__ == "__main__":
                 speak("2")
                 speak("1")
                 arm.set_gripper(0, 1000)
-
-                # 從吧檯回來
                 move_to_bar(2)
-                # 轉回剛才面對客席的方向 (使用里程計記錄的角度)
                 turn_to(_guest_yaw, 0.4)
-
                 speak("I gonna move")
                 _, _, _1yaw = get_odom_pose()
-                for walk in range(round(meter / 100)):
+                for iii in range(round(200 / 100)):
+                    move(0.2, 0)
+                    time.sleep(0.5)
+                check_wether_turned_while_moving(_1yaw)
+                for walk in range(round((meter-200) / 100)):
                     check_wether_turned_while_moving(_1yaw)
                     move(0.2, 0)
                     time.sleep(0.5)
-
                 speak("dear customer, this is " + data1[0])
                 arm.move_to_endpoint2(300, table_height, 0, 0, 0, 0)
                 arm.set_gripper(1)
                 arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
                 _, _, _1yaw = get_odom_pose()
-                for walk in range(round(meter / 100)):
+                for iii in range(round(200 / 100)):
+                    move(0.2, 0)
+                    time.sleep(0.5)
+                check_wether_turned_while_moving(_1yaw)
+                for walk in range(round((meter-200) / 100)):
                     check_wether_turned_while_moving(_1yaw)
                     move(-0.2, 0)
                     time.sleep(0.5)
-
-                # 第二次去吧檯
                 move_to_bar(1)
                 speak("dear bar man please put " + data1[1] + " between my gripper until it close")
                 time.sleep(5)
@@ -586,29 +638,32 @@ if __name__ == "__main__":
                 speak("2")
                 speak("1")
                 arm.set_gripper(0, 1000)
-
                 move_to_bar(2)
                 turn_to(_guest_yaw, 0.4)
                 _, _, _1yaw = get_odom_pose()
-                for walk in range(round(meter / 100)):
+                for iii in range(round(200 / 100)):
+                    move(0.2, 0)
+                    time.sleep(0.5)
+                check_wether_turned_while_moving(_1yaw)
+                for walk in range(round((meter-200) / 100)):
                     check_wether_turned_while_moving(_1yaw)
                     move(0.2, 0)
                     time.sleep(0.5)
-
                 speak("dear customer, this is " + data1[1])
                 arm.move_to_endpoint2(300, table_height, 0, 0, 0, 0)
                 arm.set_gripper(1)
                 arm.move_joint([0, 0, 0, 0, 0, 0], 10, 30)
                 _, _, _1yaw = get_odom_pose()
-                for walk in range(round(meter / 100)):
+                for iii in range(round(200 / 100)):
+                    move(0.2, 0)
+                    time.sleep(0.5)
+                check_wether_turned_while_moving(_1yaw)
+                for walk in range(round((meter-200) / 100)):
                     check_wether_turned_while_moving(_1yaw)
                     move(-0.2, 0)
                     time.sleep(0.5)
-
                 finded_niggasss += 1
                 break
-
             cv2.imshow("frame", code_image)
             if cv2.waitKey(1) in [ord('q'), 27]: break
-
     speak("mission end")
