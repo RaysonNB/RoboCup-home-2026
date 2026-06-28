@@ -409,8 +409,9 @@ def wait_new_frame(old_seq, timeout=3.0):
         rospy.sleep(0.05)
     return False
 
-
+prp=0
 def save_user_crop(image, user, save_path=None):
+    global prp
     box = get_pose_box(user, image.shape)
     if box is None:
         return None
@@ -426,6 +427,9 @@ def save_user_crop(image, user, save_path=None):
         os.close(fd)
 
     cv2.imwrite(save_path, crop)
+    if prp==0:
+        cv2.imwrite("/tmp/person0.jpg",crop)
+        prp+=1
     return save_path
 
 
@@ -1975,7 +1979,7 @@ def get_person_feature_seated(image, user, api_key=None):
         print("invalid crop")
         return None
 
-    img_path = "/tmp/person"+str(people_cnt)+".jpg"
+    img_path = "/tmp/person1.jpg"
     people_cnt+=1
     cv2.imwrite(img_path, crop)
 
@@ -2759,7 +2763,7 @@ if __name__ == "__main__":
     host_depth = -1
     host_search_count = 0
     recording_done = False
-    state = 18
+    state = 999999
     scan_step = np.pi / 4
     far_right_step = 3 * np.pi / 4
     say("I am ready")
@@ -3283,8 +3287,10 @@ if __name__ == "__main__":
             state = 155
 
         elif state == 155:
+            change_to_cam(1)
             print("state 155: receive bag")
             receive_bag()
+            change_to_cam(2)
             state = 15
 
         # state 15: seat guest 2
@@ -3336,14 +3342,14 @@ if __name__ == "__main__":
             img_path = "/tmp/chair.jpg"
             cv2.imwrite(img_path, image)
             room_photo = "/tmp/chair.jpg"
-            host_now_seat = process_and_find_seat(guest_photo, room_photo, p1, p2, server_ip="172.22.11.147")
+            host_now_seat = process_and_find_seat(host_photo_path, room_photo, p1, p2, server_ip="172.22.11.147")
             print("host position",host_now_seat)
             p1 = "this is the first guest"
-            guest1_now_seat = process_and_find_seat(guest_photo, room_photo, p1, p2, server_ip="172.22.11.147")
+            guest1_now_seat = process_and_find_seat(guest1_photo_path, room_photo, p1, p2, server_ip="172.22.11.147")
             print("guest position", guest1_now_seat)
             niggggga = '123'
-            niggggga = niggggga.replace(guest1_now_seat)
-            niggggga = niggggga.replace(host_now_seat)
+            niggggga = niggggga.replace(guest1_now_seat,"")
+            niggggga = niggggga.replace(host_now_seat,"")
             if len(niggggga) >0:
                 guest2_seat= niggggga[0]
             if "1" in guest2_seat:
