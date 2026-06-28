@@ -3646,6 +3646,8 @@ if __name__ == "__main__":
                 move(-0.2, 0)
                 time.sleep(0.5)
             turn(-90)
+            say("dear host, please don't stand in front of me, and please please don't walk too fast")
+            say("please say robot stop robot stop")
             state = 21
 
         # state 21 : follow host
@@ -3700,6 +3702,10 @@ if __name__ == "__main__":
                 step = "back"
                 say("I can't find you I gonna go back now")
                 followmecnt = 0
+            if "stop" in _voice:
+                state=-1111
+                #******************************************************************
+                say("mission end")
             print("follow", followmecnt)
             move(x, z)
             cv2.imshow("image", code_image)
