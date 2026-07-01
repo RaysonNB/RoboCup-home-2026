@@ -17,6 +17,7 @@ from std_srvs.srv import Empty
 from scipy.io.wavfile import write
 from piper_sdk_demo import KindaPiper
 from pcms.openvino_models import *
+from pcms.pytorch_models import *
 import requests
 import json
 import base64
@@ -31,6 +32,30 @@ import os
 import tempfile
 import subprocess
 import librosa
+from ultralytics import YOLO
+from pcms.pytorch_models import *
+from pcms.openvino_models import Yolov8, HumanPoseEstimation
+import subprocess
+from mr_voice.msg import Voice
+from playsound import playsound
+import requests
+from datetime import datetime
+import base64
+import rospy
+import tf
+import cv2
+import os
+from tf.transformations import euler_from_quaternion
+from nav_msgs.msg import Odometry
+from sensor_msgs.msg import Image
+from geometry_msgs.msg import Twist
+from cv_bridge import CvBridge
+from RobotChassis import RobotChassis
+import time
+from piper_sdk_demo import *
+import numpy as np
+import json
+
 clear_costmaps = rospy.ServiceProxy("/move_base/clear_costmaps", Empty)
 OPENROUTER_API_KEY = "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"
 VISION_MODEL = "qwen/qwen3.5-flash-02-23"
@@ -158,6 +183,7 @@ def process_and_find_seat(guest_img_path, raw_room_img_path, prompt1, prompt2, s
     except FileNotFoundError as e:
         return f"Error: 找不到客人圖片 - {e}"
 
+
 def callback_voice(msg):
     global _voice
     _voice = msg
@@ -216,8 +242,11 @@ def move(dis, turn):
 
 
 def say(text):
-    os.system(f"espeak -s 130 \"{text}\"")
-
+    print("[robot said]: ", end=" ")
+    os.system(f'espeak -s 130 "{g}"')
+    # rospy.loginfo(g)
+    print(g)
+    time.sleep(0.5)
 
 def get_pose_box(user, image_shape, padding=20):
     if user is None or len(user) == 0:
@@ -410,7 +439,10 @@ def wait_new_frame(old_seq, timeout=3.0):
         rospy.sleep(0.05)
     return False
 
-prp=0
+
+prp = 0
+
+
 def save_user_crop(image, user, save_path=None):
     global prp
     box = get_pose_box(user, image.shape)
@@ -428,9 +460,9 @@ def save_user_crop(image, user, save_path=None):
         os.close(fd)
 
     cv2.imwrite(save_path, crop)
-    if prp==0:
-        cv2.imwrite("/tmp/person0.jpg",crop)
-        prp+=1
+    if prp == 0:
+        cv2.imwrite("/tmp/person0.jpg", crop)
+        prp += 1
     return save_path
 
 
@@ -547,7 +579,7 @@ def find_user(img, depth):
             cv2.circle(image, (x, y), 3, (0, 255, 0), -1)
             if x >= w or y >= h:
                 continue
-            if depth[y][x] > 0:
+            if depth[y][x] > 0 and depth[y][x] <= 2000:
                 if mid_d == -1 or depth[y][x] < mid_d:
                     mid_d = depth[y][x]
         if (user_d == -1 or mid_d < user_d) and mid_d != -1:
@@ -759,10 +791,6 @@ Extract the person's name.
 
 Rules:
 - Ignore background noise.
-- The name must be one of this list:
-sophie, kevin, julia, gabrielle, emma, robin,
-noah, sara, john, harrie, laura, liam,
-peter, lucas, susan, william
 - If unclear, answer: nothing
 - Return only the name, lowercase.
 - Do not add extra text.
@@ -998,9 +1026,6 @@ Extract the drink.
 
 Rules:
 - Ignore background noise.
-- The drink must be one of this list:
-lemonade, coffee can, fanta, yakult,
-green tea, milk, red bull can
 - If unclear, answer: nothing
 - Return only the drink, lowercase.
 - Do not add extra text.
@@ -1102,7 +1127,8 @@ def allgn_person(image, depth):
             if depth[y][x] > 0:
                 if mid_d == -1 or depth[y][x] < mid_d:
                     mid_d = depth[y][x]
-                    
+
+
 def detect_real_xyz(x1, y1, d):
     global image
     h, w, c = image.shape
@@ -1249,6 +1275,8 @@ def draw_chair_numbers(image):
 def encode_image(path):
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode("utf-8")
+
+
 class FollowMe(object):
     def __init__(self) -> None:
         self.pre_x, self.pre_z = 0.0, 0.0
@@ -1369,6 +1397,7 @@ class FollowMe(object):
         self.pre_z = cur_z
 
         return cur_x, cur_z, frame, "yes"
+
 
 def follow1():
     global _voice
@@ -2102,7 +2131,9 @@ def find_user_seated(image, depth, conf_thres=0.25, min_box_area=4000):
 #         print("feature parse error:", e)
 #         print("raw answer =", result["answer"])
 #         return None
-people_cnt=0
+people_cnt = 0
+
+
 def get_person_feature_seated(image, user, api_key=None):
     global people_cnt
     if user is None or len(user) == 0:
@@ -2116,7 +2147,7 @@ def get_person_feature_seated(image, user, api_key=None):
         return None
 
     img_path = "/tmp/person1.jpg"
-    people_cnt+=1
+    people_cnt += 1
     cv2.imwrite(img_path, crop)
 
     prompt = """
@@ -2181,8 +2212,8 @@ def receive_bag():
     arm_extend()
     arm_open()
 
-    say("Please put your bag on my hand.")
-    rospy.sleep(3)
+    say("Please put your bag between my gripper.")
+    
 
     say("I detect the object in my hand.")
     say("I will close my gripper in 3 seconds. Please be careful.")
@@ -2543,6 +2574,7 @@ def get_center_depth_and_turn(depth):
 
     return center_depth, turn_angle
 
+
 def get_real_xyz(dp, x, y, num):
     a1 = 49.5
     b1 = 60.0
@@ -2591,6 +2623,7 @@ def get_real_xyz(dp, x, y, num):
     real_y = round(y * 2 * d * np.tan(a / 2) / h)
     real_x = round(x * 2 * d * np.tan(b / 2) / w)
     return real_x, real_y, d
+
 
 def approach_door_simple():
     global _depth
@@ -2769,6 +2802,7 @@ def detect_door_handle(image):
         "conf": conf
     }
 
+
 def align_to_door_handle():
     global _image
     if _image is None:
@@ -2875,6 +2909,7 @@ def open_door2():
             piper.set_gripper(0, 1000)
             x = True
 
+
 def open_door3():
     with open('/home/pcms/antony_ws/koreadoor3.json', 'r', encoding='utf-8') as file:
         data = json.load(file)
@@ -2887,6 +2922,7 @@ def open_door3():
         elif i["gripper"][0] <= 30000 and x == False:
             piper.set_gripper(0, 1000)
             x = True
+
 
 if __name__ == "__main__":
     rospy.init_node("mission1")
@@ -2961,10 +2997,11 @@ if __name__ == "__main__":
     recording_done = False
     arm_retract()
     state = 99999
-    scan_step = 45*np.pi / 180
+    scan_step = 45 * np.pi / 180
     far_right_step = 3 * np.pi / 4
     say("I am ready")
-    #start point: 4.049847164040595, 1.7364938075665215, -2.844931046420003)
+    number_seat = 5
+    # start point: 4.049847164040595, 1.7364938075665215, -2.844931046420003)
 
     while not rospy.is_shutdown():
         rate.sleep()
@@ -3049,7 +3086,7 @@ if __name__ == "__main__":
             if not ok:
                 continue
             print("Ready to open.")
-            turn(3*np.pi/180)
+            turn(3 * np.pi / 180)
             open_door1()
             for iii in range(round(200 / 100)):
                 move(-0.2, 0)
@@ -3074,16 +3111,47 @@ if __name__ == "__main__":
             if chassis.status_code == 3:
                 print("reach point")
                 state = 1
+                for iii in range(round(200 / 100)):
+                    move(-0.2, 0)
+                    time.sleep(0.5)
             print(chassis.status_code)
 
         # state1 : find user
         elif state == 1:
             print("state 1: find guest 1")
+            poses = dnn_pose.forward(image)
+            min_d = 9999
+            t_idx = -1
+            for i, pose in enumerate(poses):
+                if (pose[0][2] == 0 and pose[9][2] == 0) or (pose[0][2] == 0 and pose[10][2] == 0):
+                    continue
+                p5, p6, p9, p10, p0 = list(map(int, pose[5][:2])), list(map(int, pose[6][:2])), list(
+                    map(int, pose[9][:2])), list(map(int, pose[10][:2])), list(map(int, pose[0][:2]))
+
+                cx, cy = (p5[0] + p6[0]) // 2, (p5[1] + p6[1]) // 2
+                _, _, d = get_real_xyz(image, cx, cy, 2)
+                if d >= 2300 or d == 0: continue
+                if (((pose[0][2] != 0 and pose[9][2] != 0) and (p0[1] > p9[1])) or (
+                        (p0[1] > p10[1]) and (pose[0][2] != 0 and pose[10][2] != 0))) and d <= min_d:
+                    t_idx, final_d, min_d = i, d, d
+
+            if t_idx != -1:
+                p5, p6 = list(map(int, poses[t_idx][5][:2])), list(map(int, poses[t_idx][6][:2]))
+                cx, cy = (p5[0] + p6[0]) // 2, (p5[1] + p6[1]) // 2
+                _, _, d = get_real_xyz(depth, cx, cy, 2)
+                final_d = d
+                step = "none"
+                e = (image.shape[1] // 2) - cx
+                v = np.clip(0.001 * e, -0.45, 0.45)
+                move(0, v)
+                if abs(e) <= 25:
+                    state = 8964
+                    move(0, 0)
+        elif state==8964:
             user = find_user(image, depth)
             if user is not None and len(user) > 0:
                 say("hello I am detecting your feature now, please wait")
                 feat = get_person_feature(image, user)
-                turn(-allgn_person())
                 print("guest1_feature =", feat)
                 if feat is not None:
                     guest1_feature = feat
@@ -3120,8 +3188,7 @@ if __name__ == "__main__":
         elif state == 3:
             print("state 3: ask guest1 name")
             guest1_name = None
-            say("Please say in complete sentence")
-            rospy.sleep(1)
+            say("Please say in complete sentence, for example my name is john")
             say("What is your name?")
             for i in range(3):
                 print(f"[Guest1 Name] trial {i + 1}/3")
@@ -3151,8 +3218,7 @@ if __name__ == "__main__":
         elif state == 4:
             print("state 4: ask guest1 drink")
             guest1_drink = None
-            say("Please say in complete sentence")
-            rospy.sleep(1)
+            say("Please say in complete sentence, for example I like milk")
             say("What is your favorite drink?")
             for i in range(3):
                 print(f"[Guest1 Drink] trial {i + 1}/3")
@@ -3203,7 +3269,7 @@ if __name__ == "__main__":
         elif state == 8:
             print("state 8: move to main point")
             clear_costmaps
-            chassis.move_to(2.894091734633643, 0.13245321352785575, -1.569841696154195)
+            chassis.move_to(2.533, -0.586,-3.086)
             if chassis.status_code == 3:
                 say("reach main point")
                 front_angle = get_yaw_from_odom()
@@ -3229,95 +3295,52 @@ if __name__ == "__main__":
 
         # state 9 : find empty seat first, then find host
         elif state == 9:
-            print("state 9: find empty chair for guest1 and find host feature")
-
-            empty_seat = None
-            guest1_seat = None
-            host_feature = None
-
-            # -------- LEFT --------
-            old_seq = _image_seq
-            turn(+scan_step)
-            wait_new_frame(old_seq)
-
-            image = _image.copy()
-            depth = _depth.copy()
-            user = find_user_seated(image, depth)
-
-            if user is None or len(user) == 0:
-                print("left empty")
-                if guest1_seat is None:
-                    empty_seat = "left"
-                    guest1_seat = "left"
-                    say("this is your seat")
-                    rospy.sleep(2)
+            change_to_cam(1)  # 1 下2 上
+            # call api image and text
+            d = [-3.11, -2.59, -2.07, -1.555, -1.0367, -0.5183, 0]
+            a = [-3.11, -2.488, -1.866, -1.244, -0.622, 0]
+            b = [-3.11, -2.3325, -1.555, -0.7775, 0]
+            if number_seat == 5:
+                c = b
+            elif number_seat == 6:
+                c = d
             else:
-                print("left occupied, maybe host")
-                if host_feature is None:
-                    host_feature = get_person_feature_seated(image, user)
-                    print("host_feature =", host_feature)
-            # -------- MIDDLE --------
-            old_seq = _image_seq
-            turn(-scan_step)
-            wait_new_frame(old_seq)
-
-            image = _image.copy()
-            depth = _depth.copy()
-
-            middle_img, middle_depth, ox, oy = crop_middle_seat(image, depth)
-            user = find_user_seated(middle_img, middle_depth)
-            user = seated_user_crop_to_original(user, ox, oy)
-
-            if user is None or len(user) == 0:
-                print("middle empty")
-                if guest1_seat is None:
-                    empty_seat = "middle"
-                    guest1_seat = "middle"
-                    say("this is your seat")
-                    rospy.sleep(2)
-            else:
-                print("middle occupied, maybe host")
-                if host_feature is None:
-                    host_feature = get_person_feature_seated(image, user)
-                    print("host_feature =", host_feature)
-
-            # -------- RIGHT --------
-            old_seq = _image_seq
-            turn(-scan_step)
-            wait_new_frame(old_seq)
-
-            image = _image.copy()
-            depth = _depth.copy()
-            user = find_user_seated(image, depth)
-
-            if user is None or len(user) == 0:
-                print("right empty")
-                if guest1_seat is None:
-                    empty_seat = "right"
-                    guest1_seat = "right"
-                    say("this is your seat")
-                    rospy.sleep(2)
-            else:
-                print("right occupied, maybe host")
-                if host_feature is None:
-                    host_feature = get_person_feature_seated(image, user)
-                    print("host_feature =", host_feature)
-
-            # -------- 回 MIDDLE --------
-            old_seq = _image_seq
-            turn(+scan_step)
-            wait_new_frame(old_seq)
-
-            print("empty_seat =", empty_seat)
-            print("guest1_seat =", guest1_seat)
-            print("host_feature =", host_feature)
-
-            if guest1_seat is None:
-                say("sorry, no empty chair found")
-
-            if host_feature is None:
-                print("WARNING: host_feature is None")
-
+                c = a
+            for i in c:
+                turn_to(i)
+                # call_api
+                img_path = "/tmp/HRI" + str(i) + ".jpg"
+                cv2.imwrite(img_path, image)
+                prompt = '''
+                        You are a seat occupancy checker.
+    
+                         Look at the image and determine whether the seat directly in front of the camera is occupied.
+    
+                        A seat can be:
+                        - a chair
+                        - a sofa seat
+                        - an empty space on a sofa where one person can sit
+    
+                        Rules:
+                        - Only check the seat directly in front of the camera.
+                        - Ignore seats on the left or right.
+                        - Ignore people standing at the back.
+                        - Answer "yes yes yes" only if a person is sitting on that nearst front seat of this image.
+                        - Otherwise answer "no no no".
+    
+                        Return exactly one of these two strings:
+    
+                        yes yes yes
+                        no no no
+    
+                        Do not output anything else.
+                        '''
+                ans = send_media_task("/Vision", img_path, prompt, "image")
+                print("[AI feature raw] =", ans)
+                if "no" in ans:
+                    break
+            say("dear guest here is your seat")
+            time.sleep(2)
             state = 10
 
         # state10 : turn back to front
@@ -3339,7 +3362,7 @@ if __name__ == "__main__":
             if chassis.status_code == 3:
                 print("reach guest2 interaction point")
                 start = time.time()
-                state = 111
+                state = 112
             print(chassis.status_code)
 
         # state two : find guest 2
@@ -3384,7 +3407,7 @@ if __name__ == "__main__":
             if not ok:
                 continue
             print("Ready to open.")
-            turn(5*np.pi/180)
+            turn(5 * np.pi / 180)
             open_door1()
             for iii in range(round(200 / 100)):
                 move(-0.2, 0)
@@ -3413,16 +3436,40 @@ if __name__ == "__main__":
         # state 11 : find guest 2
         elif state == 115:
             print("state 11: find guest 2")
+            poses = dnn_pose.forward(image)
+            min_d = 9999
+            t_idx = -1
+            for i, pose in enumerate(poses):
+                if (pose[0][2] == 0 and pose[9][2] == 0) or (pose[0][2] == 0 and pose[10][2] == 0):
+                    continue
+                p5, p6, p9, p10, p0 = list(map(int, pose[5][:2])), list(map(int, pose[6][:2])), list(
+                    map(int, pose[9][:2])), list(map(int, pose[10][:2])), list(map(int, pose[0][:2]))
+
+                cx, cy = (p5[0] + p6[0]) // 2, (p5[1] + p6[1]) // 2
+                _, _, d = get_real_xyz(image, cx, cy, 2)
+                if d >= 2300 or d == 0: continue
+                if (((pose[0][2] != 0 and pose[9][2] != 0) and (p0[1] > p9[1])) or (
+                        (p0[1] > p10[1]) and (pose[0][2] != 0 and pose[10][2] != 0))) and d <= min_d:
+                    t_idx, final_d, min_d = i, d, d
+
+            if t_idx != -1:
+                p5, p6 = list(map(int, poses[t_idx][5][:2])), list(map(int, poses[t_idx][6][:2]))
+                cx, cy = (p5[0] + p6[0]) // 2, (p5[1] + p6[1]) // 2
+                _, _, d = get_real_xyz(depth, cx, cy, 2)
+                final_d = d
+                step = "none"
+                e = (image.shape[1] // 2) - cx
+                v = np.clip(0.001 * e, -0.45, 0.45)
+                move(0, v)
+                if abs(e) <= 25:
+                    state = 8965
+                    move(0, 0)
+
+        elif state == 8965:
             user = find_user(image, depth)
             if user is not None and len(user) > 0:
                 say("hello")
-                feat = get_person_feature(image, user)
-                print("guest2_feature =", feat)
-                if feat is not None:
-                    guest2_feature = feat
-                    state = 1275
-                else:
-                    print("feature failed, retry")
+                state = 1275
 
         # state 1275: move to guest2 interaction point
         elif state == 1275:
@@ -3453,8 +3500,7 @@ if __name__ == "__main__":
         elif state == 13:
             print("state 13: ask guest2 name")
             guest2_name = None
-            say("Please say in complete sentence")
-            rospy.sleep(1)
+            say("Please say in complete sentence, for example: my name is peter")
             say("What is your name?")
             for i in range(3):
                 print(f"[Guest2 Name] trial {i + 1}/3")
@@ -3484,8 +3530,7 @@ if __name__ == "__main__":
         elif state == 14:
             print("state 14: ask guest2 drink")
             guest2_drink = None
-            say("Please say in complete sentence")
-            rospy.sleep(1)
+            say("Please say in complete sentence, for example: I like milk")
             say("What is your favorite drink?")
             for i in range(3):
                 print(f"[Guest2 Drink] trial {i + 1}/3")
@@ -3517,6 +3562,9 @@ if __name__ == "__main__":
             print("state 155: receive bag")
             receive_bag()
             change_to_cam(2)
+            say(f"now I will tell you the feature of{guest1_name}")
+            guest1_desc = feature_to_sentence(guest1_feature)
+            say(f"{guest1_name} is {guest1_desc}")
             state = 15
 
         # state 15: seat guest 2
@@ -3543,7 +3591,7 @@ if __name__ == "__main__":
         elif state == 18:
             print("state 18: move to main point")
             clear_costmaps
-            chassis.move_to(2.894091734633643, 0.13245321352785575, -1.569841696154195)
+            chassis.move_to(2.533, -0.586,-3.086)
 
             if chassis.status_code == 3:
                 say("reach main point")
@@ -3557,66 +3605,52 @@ if __name__ == "__main__":
         # scan seats (loop state)
         # state 19 : scan chairs, and check where guest1 is every turn
         elif state == 19:
-            print("state 19 : find host, guest1, and empty chair for guest2")
-            host_now_seat = None
-            guest1_now_seat = None
-            host_photo_path = "/tmp/person1.jpg"
-            guest1_photo_path = "/tmp/person0.jpg"
-            guest2_seat = None
-            p1 = "this is the host"
-            p2 = "here have 3 seats(3 green chairs) please tell me where is he/she sitting, just give me number in [1,2,3], there should be 1 numbers only, no require extra information, answer format: 1"
-            guest_photo = host_photo_path
-            img_path = "/tmp/chair.jpg"
-            cv2.imwrite(img_path, image)
-            room_photo = "/tmp/chair.jpg"
-            host_now_seat = process_and_find_seat(host_photo_path, room_photo, p1, p2, server_ip="192.168.88.89")
-            print("host position",host_now_seat)
-            p1 = "this is the first guest"
-            guest1_now_seat = process_and_find_seat(guest1_photo_path, room_photo, p1, p2, server_ip="192.168.88.89")
-            print("guest position", guest1_now_seat)
-            niggggga = '123'
-            niggggga = niggggga.replace(guest1_now_seat,"")
-            niggggga = niggggga.replace(host_now_seat,"")
-            if len(niggggga) >0:
-                guest2_seat= niggggga[0]
-            if "1" in guest2_seat:
-                guest2_seat = "left"
-            if "2" in guest2_seat:
-                guest2_seat = "middle"
-            if "3" in guest2_seat:
-                guest2_seat = "right"
-            if "1" in host_now_seat:
-                host_now_seat = "left"
-            if "2" in host_now_seat:
-                host_now_seat = "middle"
-            if "3" in host_now_seat:
-                host_now_seat = "right"
-            if "1" in guest1_now_seat:
-                guest1_now_seat = "left"
-            if "2" in guest1_now_seat:
-                guest1_now_seat = "middle"
-            if "3" in guest1_now_seat:
-                guest1_now_seat = "right"
-            print("host_now_seat =", host_now_seat)
-            print("guest1_now_seat =", guest1_now_seat)
-            print("guest2_now_seat =", guest2_seat)
-            # ================= FIND EMPTY SEAT =================
+            change_to_cam(1)  # 1 下2 上
+            # call api image and text
+            d = [-3.11, -2.59, -2.07, -1.555, -1.0367, -0.5183, 0]
+            a = [-3.11, -2.488, -1.866, -1.244, -0.622, 0]
+            b = [-3.11, -2.3325, -1.555, -0.7775, 0]
+            if number_seat == 5:
+                c = b
+            elif number_seat == 6:
+                c = d
+            else:
+                c = a
+            for i in c:
+                turn_to(i)
+                # call_api
+                img_path = "/tmp/HRI" + str(i) + ".jpg"
+                cv2.imwrite(img_path, image)
+                prompt = '''
+                        You are a seat occupancy checker.
 
-            if guest2_seat is None:
-                print("[STATE 19] no empty seat found, fallback to middle")
-                guest2_seat = "middle"
+                         Look at the image and determine whether the seat directly in front of the camera is occupied.
 
-            print("guest2_seat =", guest2_seat)
+                        A seat can be:
+                        - a chair
+                        - a sofa seat
+                        - an empty space on a sofa where one person can sit
 
-            # ================= TELL GUEST2 WHERE TO SIT =================
-            if guest2_seat == "left":
-                say("Please sit on the left chair.")
-            elif guest2_seat == "middle":
-                say("Please sit on the middle chair.")
-            elif guest2_seat == "right":
-                say("Please sit on the right chair.")
+                        Rules:
+                        - Only check the seat directly in front of the camera.
+                        - Ignore seats on the left or right.
+                        - Ignore people standing at the back.
+                        - Answer "yes yes yes" only if a person is sitting on that nearst front seat of this image.
+                        - Otherwise answer "no no no".
 
-            rospy.sleep(2)
+                        Return exactly one of these two strings:
+
+                        yes yes yes
+                        no no no
+
+                        Do not output anything else.
+                        '''
+                ans = send_media_task("/Vision", img_path, prompt, "image")
+                print("[AI feature raw] =", ans)
+                if "no" in ans:
+                    break
+            say("dear guest here is your seat")
+            time.sleep(2)
 
             state = 20
 
@@ -3756,7 +3790,7 @@ if __name__ == "__main__":
 
             if x == 0 and z == 0:
                 if speak_nack >= 20:
-                    say("don't walk too fast, pleae come back")
+                    say("don't walk too fast, please come back")
                     speak_nack = 0
                 speak_nack += 1
                 followmecnt += 1
@@ -3767,8 +3801,8 @@ if __name__ == "__main__":
                 say("I can't find you I gonna go back now")
                 followmecnt = 0
             if "stop" in _voice:
-                state=-1111
-                #******************************************************************
+                state = -1111
+                # ******************************************************************
                 say("mission end")
             print("follow", followmecnt)
             move(x, z)
