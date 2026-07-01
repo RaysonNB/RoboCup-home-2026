@@ -13,6 +13,7 @@ from tf.transformations import euler_from_quaternion
 from open_manipulator_msgs.srv import SetJointPosition, SetJointPositionRequest
 import subprocess
 import sounddevice as sd
+from std_srvs.srv import Empty
 from scipy.io.wavfile import write
 from piper_sdk_demo import KindaPiper
 from pcms.openvino_models import *
@@ -30,7 +31,7 @@ import os
 import tempfile
 import subprocess
 import librosa
-
+clear_costmaps = rospy.ServiceProxy("/move_base/clear_costmaps", Empty)
 OPENROUTER_API_KEY = "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"
 VISION_MODEL = "qwen/qwen3.5-flash-02-23"
 MODEL = "xiaomi/mimo-v2.5"
@@ -113,7 +114,7 @@ def annotate_empty_seats(frame, output_dir=".", filename="temp_annotated.jpg"):
     return output_path
 
 
-def process_and_find_seat(guest_img_path, raw_room_img_path, prompt1, prompt2, server_ip="172.22.11.147"):
+def process_and_find_seat(guest_img_path, raw_room_img_path, prompt1, prompt2, server_ip="192.168.88.89"):
     """
     負責「畫圖」+「傳送資料給Server」的整合 Function
     """
@@ -215,7 +216,7 @@ def move(dis, turn):
 
 
 def say(text):
-    os.system(f"espeak -s 120 \"{text}\"")
+    os.system(f"espeak -s 130 \"{text}\"")
 
 
 def get_pose_box(user, image_shape, padding=20):
@@ -535,7 +536,6 @@ def crop_middle_robot(image, depth):
 
 def find_user(img, depth):
     global model
-
     h, w = depth.shape
     keypoints = model(img, verbose=False)[0].keypoints
     user = []
@@ -717,7 +717,7 @@ def chair_id_to_seat(chair_id):
     return None
 
 
-BASE_URL = "http://172.22.11.147:8888"
+BASE_URL = "http://192.168.88.89:8888"
 
 
 def send_media_task(endpoint, file_path, prompt, file_key):
@@ -1086,6 +1086,23 @@ def turn(angle):
     turn_to(target, 0.5)
 
 
+def allgn_person(image, depth):
+    global model
+    h, w = depth.shape
+    keypoints = model(image, verbose=False)[0].keypoints
+    user = []
+    user_d = -1
+    for pose in keypoints.xy:
+        mid_d = -1
+        for p in pose:
+            x, y = map(int, p)
+            cv2.circle(image, (x, y), 3, (0, 255, 0), -1)
+            if x >= w or y >= h:
+                continue
+            if depth[y][x] > 0:
+                if mid_d == -1 or depth[y][x] < mid_d:
+                    mid_d = depth[y][x]
+                    
 def detect_real_xyz(x1, y1, d):
     global image
     h, w, c = image.shape
@@ -2525,6 +2542,7 @@ def get_center_depth_and_turn(depth):
     print("[DOOR] turn_angle =", turn_angle)
 
     return center_depth, turn_angle
+
 def get_real_xyz(dp, x, y, num):
     a1 = 49.5
     b1 = 60.0
@@ -2751,7 +2769,6 @@ def detect_door_handle(image):
         "conf": conf
     }
 
-
 def align_to_door_handle():
     global _image
     if _image is None:
@@ -2774,7 +2791,7 @@ def align_to_door_handle():
     if abs(error) < 20:
         print("Door handle aligned.")
         return True
-    angle = error * 0.0012
+    angle = error * 0.002
     angle = max(min(angle, np.deg2rad(4)), -np.deg2rad(4))
     turn(-angle)
     rospy.sleep(0.4)
@@ -2812,7 +2829,7 @@ def adjust_door_distance():
         return False
 
     # 你話 arm 到門大約 800-900mm
-    if d > 900:
+    if d > 870:
         print("[DOOR] too far, move forward")
         move(0.12, 0)
         rospy.sleep(0.4)
@@ -2832,32 +2849,44 @@ def adjust_door_distance():
 
 
 def open_door1():
-    with open('/home/pcms/antony_ws/data.json', 'r', encoding='utf-8') as file:
+    with open('/home/pcms/antony_ws/koreadoor1.json', 'r', encoding='utf-8') as file:
         data = json.load(file)
     x = True
     for i in data:
         piper.move_joint(i["joints"])
-        if i["gripper"][0] > 50000 and x == True:
+        if i["gripper"][0] > 30000 and x == True:
             piper.set_gripper(1, 1000)
             x = False
-        elif i["gripper"][0] <= 50000 and x == False:
+        elif i["gripper"][0] <= 30000 and x == False:
             piper.set_gripper(0, 1000)
             x = True
 
 
 def open_door2():
-    with open('/home/pcms/antony_ws/data2.json', 'r', encoding='utf-8') as file:
+    with open('/home/pcms/antony_ws/koreadoor2.json', 'r', encoding='utf-8') as file:
         data = json.load(file)
     x = True
     for i in data:
         piper.move_joint(i["joints"])
-        if i["gripper"][0] > 50000 and x == True:
+        if i["gripper"][0] > 30000 and x == True:
             piper.set_gripper(1, 1000)
             x = False
-        elif i["gripper"][0] <= 50000 and x == False:
+        elif i["gripper"][0] <= 30000 and x == False:
             piper.set_gripper(0, 1000)
             x = True
 
+def open_door3():
+    with open('/home/pcms/antony_ws/koreadoor3.json', 'r', encoding='utf-8') as file:
+        data = json.load(file)
+    x = True
+    for i in data:
+        piper.move_joint(i["joints"])
+        if i["gripper"][0] > 30000 and x == True:
+            piper.set_gripper(1, 1000)
+            x = False
+        elif i["gripper"][0] <= 30000 and x == False:
+            piper.set_gripper(0, 1000)
+            x = True
 
 if __name__ == "__main__":
     rospy.init_node("mission1")
@@ -2886,7 +2915,7 @@ if __name__ == "__main__":
 
     model = YOLO("yolov8n-pose.pt")
     luggage_model = YOLO("bag_model_2026.pt")
-    door_handle_model = YOLO("/home/pcms/antony_ws/best(4).pt")
+    door_handle_model = YOLO("/home/pcms/antony_ws/door.pt")
     dnn_pose = HumanPoseEstimation(device_name="GPU")
 
     piper = KindaPiper()
@@ -2930,10 +2959,12 @@ if __name__ == "__main__":
     host_depth = -1
     host_search_count = 0
     recording_done = False
-    state = 999999
-    scan_step = np.pi / 4
+    arm_retract()
+    state = 99999
+    scan_step = 45*np.pi / 180
     far_right_step = 3 * np.pi / 4
     say("I am ready")
+    #start point: 4.049847164040595, 1.7364938075665215, -2.844931046420003)
 
     while not rospy.is_shutdown():
         rate.sleep()
@@ -2960,21 +2991,22 @@ if __name__ == "__main__":
         # state check
         if state == 999999:
             print("state 0: ready")
-            state = 999
+            state = 995
 
-        elif state == 999:
-            if wait_until_door_open():
-                say("Door is open")
-                state = 995
-            else:
-                say("Door is still closed")
-                state = 999
+        # elif state == 999:
+        #     if wait_until_door_open():
+        #         say("Door is open")
+        #         state = 995
+        #     else:
+        #         say("Door is still closed")
+        #         state = 999
 
         # state 9999: walk into the room
         elif state == 995:
-            print("[STATE 9999] MOVE_TO_ROOM")
-            say("moving to room")
-            chassis.move_to(3.69, 0.31, 2.69)
+            print("[STATE 9999] MOVE_TO_WAIT_DOOR_BELL_POINT")
+            say("moving")
+            clear_costmaps
+            chassis.move_to(1.9089344791625311, 0.06949383359396662, 3.0934575863400777)
             if chassis.status_code == 3:
                 print("reach point")
                 state = 0
@@ -2984,14 +3016,11 @@ if __name__ == "__main__":
         elif state == 0:
             print("state 0: wait for bell")
             if _new_audio_flag and _audio_path is not None and os.path.exists(_audio_path):
-
                 if _audio_path == _last_checked_audio_path:
                     _new_audio_flag = False
                     continue
-
                 _last_checked_audio_path = _audio_path
                 _new_audio_flag = False
-
                 if detect_bell_from_file(_audio_path):
                     say("I heard the doorbell")
                     state = 99999
@@ -3001,7 +3030,8 @@ if __name__ == "__main__":
         elif state == 99999:
             print("[STATE 99999] move to door")
             say("moving to door")
-            chassis.move_to(2.53, 4.423, 1.251)
+            clear_costmaps
+            chassis.move_to(1.1639211287046005, 0.4159578853659312, -3.1190504833965833)
             if chassis.status_code == 3:
                 print("reach point")
                 state = 99995
@@ -3019,17 +3049,28 @@ if __name__ == "__main__":
             if not ok:
                 continue
             print("Ready to open.")
+            turn(3*np.pi/180)
             open_door1()
-            move(-0.18, 0)
+            for iii in range(round(200 / 100)):
+                move(-0.2, 0)
+                time.sleep(0.5)
             open_door2()
+            for iii in range(round(300 / 100)):
+                move(-0.2, 0)
+                time.sleep(0.5)
+            open_door3()
             arm_retract()
+            say("please wait for a moment")
+            change_to_cam(2)
             state = 9999
+
 
         # state 9999: walk into the room
         elif state == 9999:
             print("[STATE 9999] MOVE_TO_ROOM")
             say("moving to room")
-            chassis.move_to(3.69, 0.31, 2.69)
+            clear_costmaps
+            chassis.move_to(1.9089344791625311, 0.06949383359396662, 3.0934575863400777)
             if chassis.status_code == 3:
                 print("reach point")
                 state = 1
@@ -3042,28 +3083,30 @@ if __name__ == "__main__":
             if user is not None and len(user) > 0:
                 say("hello I am detecting your feature now, please wait")
                 feat = get_person_feature(image, user)
+                turn(-allgn_person())
                 print("guest1_feature =", feat)
                 if feat is not None:
                     guest1_feature = feat
-                    state = 1225
+                    state = 2
                 else:
                     print("feature failed, retry")
 
         # state 1255: move to guest1 first point
-        elif state == 1225:
-            print("[STATE 1225] MOVE_TO_GUEST1 first point")
-            say("moving to guest1 first point")
-            chassis.move_to(2.5, 0.663, 2.73)
-            if chassis.status_code == 3:
-                print("reach point")
-                state = 2
-            print(chassis.status_code)
+        # elif state == 1225:
+        #     print("[STATE 1225] MOVE_TO_GUEST1 first point")
+        #     say("moving to guest1 first point")
+        #     chassis.move_to(2.5, 0.663, 2.73)
+        #     if chassis.status_code == 3:
+        #         print("reach point")
+        #         state = 2
+        #     print(chassis.status_code)
 
         # state2 : move to guest1
         elif state == 2:
             print("[STATE 2] MOVE_TO_GUEST1")
             say("moving to guest1")
-            chassis.move_to(2.64, 0.81, 2.73)
+            clear_costmaps
+            chassis.move_to(1.1639211287046005, 0.4159578853659312, -3.1190504833965833)
             if chassis.status_code == 3:
                 print("reach guest1 interaction point")
                 state = 3
@@ -3077,17 +3120,18 @@ if __name__ == "__main__":
         elif state == 3:
             print("state 3: ask guest1 name")
             guest1_name = None
+            say("Please say in complete sentence")
+            rospy.sleep(1)
+            say("What is your name?")
             for i in range(3):
                 print(f"[Guest1 Name] trial {i + 1}/3")
-                say("Please say in complete sentence")
-                rospy.sleep(1)
-                say("What is your name?")
                 wav_path = record_audio_arecord(
                     "/tmp/guest1_name.wav",
                     5
                 )
                 if wav_path is None:
-                    say("I cannot hear you. Please repeat your name.")
+                    print("xxxxx")
+                    say("Please repeat your name.")
                     continue
                 res = audio_extract_name(wav_path, OPENROUTER_API_KEY)
                 print("AI name result =", res)
@@ -3107,17 +3151,18 @@ if __name__ == "__main__":
         elif state == 4:
             print("state 4: ask guest1 drink")
             guest1_drink = None
+            say("Please say in complete sentence")
+            rospy.sleep(1)
+            say("What is your favorite drink?")
             for i in range(3):
                 print(f"[Guest1 Drink] trial {i + 1}/3")
-                say("Please say in complete sentence")
-                rospy.sleep(1)
-                say("What is your favorite drink?")
                 wav_path = record_audio_arecord(
                     "/tmp/guest1_drink.wav",
                     5
                 )
                 if wav_path is None:
-                    say("I cannot hear you. Please repeat your drink.")
+                    print("xxxxx")
+                    say("Please repeat your drink.")
                     continue
                 res = audio_extract_drink(wav_path, OPENROUTER_API_KEY)
                 print("AI drink result =", res)
@@ -3144,20 +3189,21 @@ if __name__ == "__main__":
         elif state == 6:
             turn_back()
             print("success turning 180")
-            state = 7
+            state = 8
 
         # state 7 : move to point 1
-        elif state == 7:
-            print("starting to move to point 1")
-            chassis.move_to(2.5, 0.663, 0)
-            if chassis.status_code == 3:
-                print("reach point 1")
-                state = 8
+        # elif state == 7:
+        #     print("starting to move to point 1")
+        #     chassis.move_to(2.5, 0.663, 0)
+        #     if chassis.status_code == 3:
+        #         print("reach point 1")
+        #         state = 8
 
         # state 8 : move to main point
         elif state == 8:
             print("state 8: move to main point")
-            chassis.move_to(3.41, 0.086, -1.85)
+            clear_costmaps
+            chassis.move_to(2.894091734633643, 0.13245321352785575, -1.569841696154195)
             if chassis.status_code == 3:
                 say("reach main point")
                 front_angle = get_yaw_from_odom()
@@ -3235,27 +3281,27 @@ if __name__ == "__main__":
                     host_feature = get_person_feature_seated(image, user)
                     print("host_feature =", host_feature)
 
-                # -------- RIGHT --------
-                old_seq = _image_seq
-                turn(-scan_step)
-                wait_new_frame(old_seq)
+            # -------- RIGHT --------
+            old_seq = _image_seq
+            turn(-scan_step)
+            wait_new_frame(old_seq)
 
-                image = _image.copy()
-                depth = _depth.copy()
-                user = find_user_seated(image, depth)
+            image = _image.copy()
+            depth = _depth.copy()
+            user = find_user_seated(image, depth)
 
-                if user is None or len(user) == 0:
-                    print("right empty")
-                    if guest1_seat is None:
-                        empty_seat = "right"
-                        guest1_seat = "right"
-                        say("this is your seat")
-                        rospy.sleep(2)
-                else:
-                    print("right occupied, maybe host")
-                    if host_feature is None:
-                        host_feature = get_person_feature_seated(image, user)
-                        print("host_feature =", host_feature)
+            if user is None or len(user) == 0:
+                print("right empty")
+                if guest1_seat is None:
+                    empty_seat = "right"
+                    guest1_seat = "right"
+                    say("this is your seat")
+                    rospy.sleep(2)
+            else:
+                print("right occupied, maybe host")
+                if host_feature is None:
+                    host_feature = get_person_feature_seated(image, user)
+                    print("host_feature =", host_feature)
 
             # -------- 回 MIDDLE --------
             old_seq = _image_seq
@@ -3276,8 +3322,7 @@ if __name__ == "__main__":
 
         # state10 : turn back to front
         elif state == 10:
-            print("state 10: turn back to front")
-            turn_back()
+            print("state 10: print out guest1 info and host info")
             print("guest1_name =", guest1_name)
             print("guest1_drink =", guest1_drink)
             print("guest1_feature =", guest1_feature)
@@ -3288,10 +3333,12 @@ if __name__ == "__main__":
 
         elif state == 105:
             print("[STATE 10.5] MOVE_TO_GUEST2")
-            say("wait the bell ring")
-            chassis.move_to(3.69, 0.31, 2.69)
+            say("moving to guest 2 interaction point")
+            clear_costmaps
+            chassis.move_to(1.9089344791625311, 0.06949383359396662, 3.0934575863400777)
             if chassis.status_code == 3:
                 print("reach guest2 interaction point")
+                start = time.time()
                 state = 111
             print(chassis.status_code)
 
@@ -3299,31 +3346,33 @@ if __name__ == "__main__":
         # state0 : hear the bell
         elif state == 111:
             print("state 0: wait for bell")
-            if _new_audio_flag and _audio_path is not None and os.path.exists(_audio_path):
+            while time.time() - start < 10:
+                if _new_audio_flag and _audio_path is not None and os.path.exists(_audio_path):
 
-                if _audio_path == _last_checked_audio_path:
+                    if _audio_path == _last_checked_audio_path:
+                        _new_audio_flag = False
+                        continue
+
+                    _last_checked_audio_path = _audio_path
                     _new_audio_flag = False
-                    continue
 
-                _last_checked_audio_path = _audio_path
-                _new_audio_flag = False
-
-                if detect_bell_from_file(_audio_path):
-                    say("I heard the doorbell")
-                    state = 112
-                else:
-                    print("not bell")
+                    if detect_bell_from_file(_audio_path):
+                        say("I heard the doorbell")
+                        state = 112
+                    else:
+                        print("not bell")
 
         elif state == 112:
             print("[STATE 99999] move to door")
             say("moving to door")
-            chassis.move_to(2.53, 4.423, 1.251)
+            clear_costmaps
+            chassis.move_to(1.1639211287046005, 0.4159578853659312, -3.1190504833965833)
             if chassis.status_code == 3:
                 print("reach point")
                 state = 113
             print(chassis.status_code)
 
-        # state 99995: open door function
+        # state 113: open door function
         elif state == 113:
             change_to_cam(1)
             print("Align to door handle")
@@ -3335,18 +3384,27 @@ if __name__ == "__main__":
             if not ok:
                 continue
             print("Ready to open.")
+            turn(5*np.pi/180)
             open_door1()
-            move(-0.18, 0)
+            for iii in range(round(200 / 100)):
+                move(-0.2, 0)
+                time.sleep(0.5)
             open_door2()
+            for iii in range(round(300 / 100)):
+                move(-0.2, 0)
+                time.sleep(0.5)
+            open_door3()
             arm_retract()
+            say("please wait for a moment")
             change_to_cam(2)
             state = 114
 
-        # state 9999: walk into the room
+        # state 114: walk into the room
         elif state == 114:
-            print("[STATE 9999] MOVE_TO_ROOM")
+            print("[STATE 114] MOVE_TO_ROOM")
             say("moving to room")
-            chassis.move_to(3.69, 0.31, 2.69)
+            clear_costmaps
+            chassis.move_to(1.9089344791625311, 0.06949383359396662, 3.0934575863400777)
             if chassis.status_code == 3:
                 print("reach point")
                 state = 115
@@ -3366,25 +3424,26 @@ if __name__ == "__main__":
                 else:
                     print("feature failed, retry")
 
-        # state 1275:move to guest2 first point
+        # state 1275: move to guest2 interaction point
         elif state == 1275:
-            print("[STATE 1275] MOVE_TO_GUEST2 first point")
-            say("moving to guest2 first point")
-            chassis.move_to(2.5, 0.663, 2.73)
+            print("[STATE 1275] MOVE_TO_GUEST2 interaction point")
+            say("moving to guest2 interaction point")
+            clear_costmaps
+            chassis.move_to(1.1639211287046005, 0.4159578853659312, -3.1190504833965833)
             if chassis.status_code == 3:
                 print("reach point")
-                state = 12
+                state = 13
             print(chassis.status_code)
 
         # state = 12: navigate to point
-        elif state == 12:
-            print("[STATE 12] MOVE_TO_GUEST2")
-            say("moving to guest2")
-            chassis.move_to(2.64, 0.81, 2.73)
-            if chassis.status_code == 3:
-                print("reach guest2 interaction point")
-                state = 13
-            print(chassis.status_code)
+        # elif state == 12:
+        #     print("[STATE 12] MOVE_TO_GUEST2")
+        #     say("moving to guest2")
+        #     chassis.move_to(1.1639211287046005, 0.4159578853659312, -3.1190504833965833)
+        #     if chassis.status_code == 3:
+        #         print("reach guest2 interaction point")
+        #         state = 13
+        #     print(chassis.status_code)
 
         # elif state == 125:
         # turn_back()
@@ -3394,18 +3453,18 @@ if __name__ == "__main__":
         elif state == 13:
             print("state 13: ask guest2 name")
             guest2_name = None
+            say("Please say in complete sentence")
+            rospy.sleep(1)
+            say("What is your name?")
             for i in range(3):
                 print(f"[Guest2 Name] trial {i + 1}/3")
-                say("Please say in complete sentence")
-                rospy.sleep(1)
-                say("What is your name?")
                 rospy.sleep(0.5)
                 wav_path = record_audio_arecord(
                     "/tmp/guest2_name.wav",
                     5
                 )
                 if wav_path is None:
-                    say("I cannot hear you. Please repeat your name.")
+                    say("Please repeat your name.")
                     continue
                 res = audio_extract_name(wav_path, OPENROUTER_API_KEY)
                 print("AI name result =", res)
@@ -3425,11 +3484,11 @@ if __name__ == "__main__":
         elif state == 14:
             print("state 14: ask guest2 drink")
             guest2_drink = None
+            say("Please say in complete sentence")
+            rospy.sleep(1)
+            say("What is your favorite drink?")
             for i in range(3):
                 print(f"[Guest2 Drink] trial {i + 1}/3")
-                say("Please say in complete sentence")
-                rospy.sleep(1)
-                say("What is your favorite drink?")
                 rospy.sleep(0.5)
                 wav_path = record_audio_arecord(
                     "/tmp/guest2_drink.wav",
@@ -3464,7 +3523,7 @@ if __name__ == "__main__":
         elif state == 15:
             print("state 15: seat guest 2")
             say("please follow me")
-            state = 17
+            state = 18
 
         # state 16: turn 180
         # elif state == 16:
@@ -3473,17 +3532,18 @@ if __name__ == "__main__":
         # state = 17
 
         # state 17: move to point 1
-        elif state == 17:
-            print("starting to move to point 1")
-            chassis.move_to(2.5, 0.663, 0)
-            if chassis.status_code == 3:
-                print("reach point 1")
-                state = 18
+        # elif state == 17:
+        #     print("starting to move to point 1")
+        #     chassis.move_to(2.5, 0.663, 0)
+        #     if chassis.status_code == 3:
+        #         print("reach point 1")
+        #         state = 18
 
         # state 18: move to main point
         elif state == 18:
             print("state 18: move to main point")
-            chassis.move_to(3.41, 0.086, -1.85)
+            clear_costmaps
+            chassis.move_to(2.894091734633643, 0.13245321352785575, -1.569841696154195)
 
             if chassis.status_code == 3:
                 say("reach main point")
@@ -3509,10 +3569,10 @@ if __name__ == "__main__":
             img_path = "/tmp/chair.jpg"
             cv2.imwrite(img_path, image)
             room_photo = "/tmp/chair.jpg"
-            host_now_seat = process_and_find_seat(host_photo_path, room_photo, p1, p2, server_ip="172.22.11.147")
+            host_now_seat = process_and_find_seat(host_photo_path, room_photo, p1, p2, server_ip="192.168.88.89")
             print("host position",host_now_seat)
             p1 = "this is the first guest"
-            guest1_now_seat = process_and_find_seat(guest1_photo_path, room_photo, p1, p2, server_ip="172.22.11.147")
+            guest1_now_seat = process_and_find_seat(guest1_photo_path, room_photo, p1, p2, server_ip="192.168.88.89")
             print("guest position", guest1_now_seat)
             niggggga = '123'
             niggggga = niggggga.replace(guest1_now_seat,"")
@@ -3646,8 +3706,12 @@ if __name__ == "__main__":
                 move(-0.2, 0)
                 time.sleep(0.5)
             turn(-90)
-            say("dear host, please don't stand in front of me, and please please don't walk too fast")
-            say("please say robot stop robot stop")
+            say("dear host, please stand in front of me, and please please don't walk too fast")
+            say("please say robot stop robot stop,when you arrive")
+            time.sleep(3)
+            say("3")
+            say("2")
+            say("1")
             state = 21
 
         # state 21 : follow host
