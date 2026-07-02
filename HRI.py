@@ -1,161 +1,61 @@
 #!/usr/bin/env python3.8
-import rospy
-from sensor_msgs.msg import Image, Imu
-from nav_msgs.msg import Odometry
-from cv_bridge import CvBridge
 from std_msgs.msg import String
-from geometry_msgs.msg import Twist
-from mr_voice.msg import Voice
-from ultralytics import YOLO
-import cv2
-from RobotChassis import RobotChassis  # Your chassis driver
-from tf.transformations import euler_from_quaternion
-from open_manipulator_msgs.srv import SetJointPosition, SetJointPositionRequest
-import subprocess
-import sounddevice as sd
 from std_srvs.srv import Empty
-from scipy.io.wavfile import write
 from piper_sdk_demo import KindaPiper
 from pcms.openvino_models import *
 from pcms.pytorch_models import *
-import requests
-import json
-import base64
-import time
-import re
-import numpy as np
-import math
-import matplotlib.pyplot as plt
-import time
-import pyautogui
-import os
+from typing import Tuple
 import tempfile
-import subprocess
-import librosa
 from ultralytics import YOLO
 from pcms.pytorch_models import *
 from pcms.openvino_models import Yolov8, HumanPoseEstimation
 import subprocess
 from mr_voice.msg import Voice
-from playsound import playsound
 import requests
-from datetime import datetime
-import base64
 import rospy
-import tf
 import cv2
 import os
 from tf.transformations import euler_from_quaternion
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist
-from cv_bridge import CvBridge
 from RobotChassis import RobotChassis
 import time
 from piper_sdk_demo import *
 import numpy as np
 import json
-
+from cv_bridge import CvBridge
+bridge = CvBridge()
 clear_costmaps = rospy.ServiceProxy("/move_base/clear_costmaps", Empty)
-OPENROUTER_API_KEY = "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"
-VISION_MODEL = "qwen/qwen3.5-flash-02-23"
-MODEL = "xiaomi/mimo-v2.5"
-CHAIR_MODEL = "qwen/qwen3.5-flash-02-23"
-AUDIO_DEVICE = ""
-AUDIO_FS = 16000
-AUDIO_CHANNELS = 1
-API_KEY = "sk-lm-Z7kmhaBy:URWIhcO11V4clG2ex936"
-
 _image = None
 _depth = None
 _image_seq = 0
 _depth_seq = 0
 _voice = None
 _odom = None
-_low_image = None
-_low_depth = None
-CvBr = CvBridge()
 code = 0
 _current_cam = 1
 _sub_cam_image = None
 _sub_cam_depth = None
-bridge = CvBridge()
 _audio_path = None
 _new_audio_flag = False
-
-NAME_LIST = [
-    "sophie", "kevin", "julia", "gabrielle", "emma", "robin",
-    "noah", "sara", "john", "harrie", "laura", "liam",
-    "peter", "lucas", "susan", "william"
-]
-
-DRINK_LIST = [
-    "lemonade", "coffee can", "fanta", "yakult",
-    "green tea", "milk", "red bull can"
-]
-
-color_ranges = {
-    'red': [(0, 100, 100), (10, 255, 255), (160, 100, 100), (180, 255, 255)],
-    'orange': [(11, 100, 100), (25, 255, 255)],
-    'yellow': [(26, 100, 100), (35, 255, 255)],
-    'green': [(36, 100, 100), (85, 255, 255)],
-    'cyan': [(86, 100, 100), (95, 255, 255)],
-    'blue': [(96, 100, 100), (130, 255, 255)],
-    'violet': [(131, 100, 100), (145, 255, 255)],
-    'magenta': [(146, 100, 100), (159, 255, 255)],
-    'black': [(0, 0, 0), (180, 255, 50)],
-    'white': [(0, 0, 200), (180, 30, 255)]
-}
 model = YOLO("yolov8n-pose.pt")
-
-
-# def tezhengyi():
-def annotate_empty_seats(frame, output_dir=".", filename="temp_annotated.jpg"):
-    check_empty_img = frame.copy()
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 1.5
-    font_color = (255, 255, 255)
-    font_thickness = 5
-
-    height, width = check_empty_img.shape[:2]
-
-    positions = {
-        1: (int(width * 0.3), int(height * 0.5)),
-        2: (int(width * 0.5), int(height * 0.5)),
-        3: (int(width * 0.7), int(height * 0.5)),
-    }
-
-    for number, pos in positions.items():
-        text_size = cv2.getTextSize(str(number), font, font_scale, font_thickness)[0]
-        rectangle_start = (pos[0] - 10, pos[1] + 10)
-        rectangle_end = (pos[0] + text_size[0] + 10, pos[1] - text_size[1] - 10)
-        cv2.rectangle(check_empty_img, rectangle_start, rectangle_end, (0, 0, 0), cv2.FILLED)
-        cv2.putText(check_empty_img, str(number), pos, font, font_scale, font_color, font_thickness, cv2.LINE_AA)
-
-    os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, filename)
-    cv2.imwrite(output_path, check_empty_img)
-
-    return output_path
-
+SAMPLE_RATE = 44100
+ALSA_DEVICE = "pulse"
+prp = 0
+BASE_URL = "http://192.168.88.89:8888"
 
 def callback_voice(msg):
     global _voice
     _voice = msg
-
-
 def callback_odom(msg):
     global _odom
     _odom = msg
-
-
 def callback_path(msg):
     global _audio_path, _new_audio_flag
     _audio_path = msg.data
     _new_audio_flag = True
     print("new audio path =", _audio_path)
-
-
 def callback_image(msg):
     global _image, _image_seq
     try:
@@ -163,8 +63,6 @@ def callback_image(msg):
         _image_seq += 1
     except Exception as e:
         print("callback_image error:", e)
-
-
 def callback_depth(msg):
     global _depth, _depth_seq
     try:
@@ -172,43 +70,24 @@ def callback_depth(msg):
         _depth_seq += 1
     except Exception as e:
         print("callback_depth error:", e)
-
-
-def callback_low_image(msg):
-    global _low_image
-    _low_image = CvBridge().imgmsg_to_cv2(msg, "bgr8")
-
-
-def callback_low_depth(msg):
-    global _low_depth
-    _low_depth = CvBridge().imgmsg_to_cv2(msg)
-
-
 def callback_Imu(msg):
     global _Imu
     _Imu = msg
-
-
 def move(dis, turn):
     fb = Twist()
     fb.linear.x = dis
     fb.angular.z = turn
     pub_cmd.publish(fb)
-
-
 def say(g):
     print("[robot said]: ", end=" ")
     os.system(f'espeak -s 130 "{g}"')
-    # rospy.loginfo(g)
     print(g)
     time.sleep(0.5)
 def speak(g):
     print("[robot said]: ", end=" ")
-    os.system(f'espeak -s 120 "{g}"')
-    # rospy.loginfo(g)
+    os.system(f'espeak -s 110 "{g}"')
     print(g)
     time.sleep(0.5)
-
 def get_pose_box(user, image_shape, padding=20):
     if user is None or len(user) == 0:
         return None
@@ -232,39 +111,6 @@ def get_pose_box(user, image_shape, padding=20):
     y2 = min(h - 1, max(ys) + padding)
 
     return x1, y1, x2, y2
-
-
-def wait_for_new_audio(timeout=5):
-    global _audio_path, _new_audio_flag, _voice
-
-    start = time.time()
-    while time.time() - start < timeout:
-        path = None
-        print(_voice, end="\r", flush=False)
-        if _voice is not None and _audio_path is not None:
-            path = _audio_path
-            _voice = None
-            _audio_path = None
-            print(path)
-            if os.path.exists(path):
-                _new_audio_flag = False
-                print("use audio file:", path)
-                break
-        # rospy.sleep(0.05)
-    print(path)
-    return path
-
-
-def encode_audio(audio_path):
-    with open(audio_path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
-
-
-SAMPLE_RATE = 44100
-RECORD_SECONDS = 5
-ALSA_DEVICE = "pulse"
-
-
 def record_audio_arecord(filename="/tmp/guest.wav", seconds=5):
     if os.path.exists(filename):
         print("file exists")
@@ -308,38 +154,6 @@ def record_audio_arecord(filename="/tmp/guest.wav", seconds=5):
         return None
 
     return filename
-
-
-BELL_THRESHOLD = 160000
-BELL_TARGET_PATH = "/home/pcms/antony_ws/bellring"
-_last_checked_audio_path = None
-BELL_SAMPLE_RATE = 44100
-
-def match_from_list(text, valid_list):
-    if text is None:
-        return None
-
-    text = text.lower().strip()
-
-    for item in valid_list:
-        if item in text:
-            return item
-
-    return None
-
-
-def wait_new_frame(old_seq, timeout=3.0):
-    start = rospy.get_time()
-    while rospy.get_time() - start < timeout:
-        if _image is not None and _image_seq > old_seq:
-            return True
-        rospy.sleep(0.05)
-    return False
-
-
-prp = 0
-
-
 def save_user_crop(image, user, save_path=None):
     global prp
     box = get_pose_box(user, image.shape)
@@ -361,90 +175,6 @@ def save_user_crop(image, user, save_path=None):
         cv2.imwrite("/tmp/person0.jpg", crop)
         prp += 1
     return save_path
-
-
-def bag_any_xy(image):
-    h, w, c = image.shape
-    result = luggage_model(image, verbose=False)[0]
-    boxes = result.boxes
-
-    best_box = None
-    best_score = -1
-
-    for cls, xyxy in zip(boxes.cls, boxes.xyxy):
-        x1, y1, x2, y2 = map(int, xyxy)
-
-        cx = (x1 + x2) // 2
-        cy = (y1 + y2) // 2
-        area = (x2 - x1) * (y2 - y1)
-
-        if cy > h * 0.9:
-            continue
-
-        score = area - abs(cx - w // 2) * 150
-
-        if score > best_score:
-            best_score = score
-            best_box = (x1, y1, x2, y2)
-
-    if best_box is None:
-        return 0, 0, None
-
-    x1, y1, x2, y2 = best_box
-    cx = (x1 + x2) // 2
-    cy = (y1 + y2) // 2
-
-    cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
-    return cx, cy, (x1, y1, x2, y2)
-
-
-def is_bag_handover_from_guest2(image, depth, user):
-    h, w = depth.shape
-
-    person_box = get_pose_box(user, image.shape)
-    if person_box is None:
-        return False, 0, 0, 0
-
-    px1, py1, px2, py2 = person_box
-    pcx = (px1 + px2) // 2
-    pcy = (py1 + py2) // 2
-    pw = px2 - px1
-    ph = py2 - py1
-
-    cv2.rectangle(image, (px1, py1), (px2, py2), (0, 255, 255), 2)
-
-    bagx, bagy, bag_box = bag_any_xy(image)
-    if bag_box is None:
-        return False, 0, 0, 0
-
-    bx1, by1, bx2, by2 = bag_box
-    bcx = (bx1 + bx2) // 2
-    bcy = (by1 + by2) // 2
-
-    if bagx < 0 or bagx >= w or bagy < 0 or bagy >= h:
-        return False, 0, 0, 0
-
-    bag_depth = depth[bagy][bagx]
-
-    if bag_depth == 0:
-        return False, bagx, bagy, 0
-
-    if abs(bcx - pcx) > pw * 1.0:
-        return False, bagx, bagy, bag_depth
-
-    if bcy > py2 + ph * 0.15:
-        return False, bagx, bagy, bag_depth
-
-    if bcy < py1 + ph * 0.10:
-        return False, bagx, bagy, bag_depth
-
-    if bag_depth > 1200:
-        return False, bagx, bagy, bag_depth
-
-    if bag_depth < 250:
-        return False, bagx, bagy, bag_depth
-
-    return True, bagx, bagy, bag_depth
 def find_user(img, depth):
     global model
     h, w = depth.shape
@@ -465,37 +195,6 @@ def find_user(img, depth):
             user_d = mid_d
             user = pose
     return user
-
-
-def user_point_to_LR(pose):
-    if pose is None: return 0
-    if len(pose) == 0: return 0
-    x0, y0 = map(int, pose[0])
-    x8, y8 = map(int, pose[10])
-    if x0 == x8: return 0
-    k = (y0 - y8) / (x0 - x8)
-    if abs(k) > 1.2: return 0
-    if k > 0: return 1
-    return -1
-
-
-def bag_xy(dir, image):
-    h, w, cc = image.shape
-    result = luggage_model(image, verbose=False)[0]
-    boxes = result.boxes
-
-    for c, xyxy in zip(boxes.cls, boxes.xyxy):
-        x1, y1, x2, y2 = map(int, xyxy)
-        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        b = 0
-        if int((x1 + x2) / 2) > w // 2:
-            b = 1
-        if dir == b:
-            cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
-            return int((x1 + x2) / 2), int((y1 + y2) / 2)
-    return 0, 0
-
-
 def change_to_cam(idx):
     global _sub_cam_image, _sub_cam_depth, _current_cam
     _current_cam = idx
@@ -511,67 +210,6 @@ def change_to_cam(idx):
     elif idx == 2:
         _sub_cam_image = rospy.Subscriber("/cam1/color/image_raw", Image, callback_image)
         _sub_cam_depth = rospy.Subscriber("/cam1/depth/image_raw", Image, callback_depth)
-def draw_chair_numbers(image):
-    check_empty_img = image.copy()
-
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 2.0
-    font_color = (255, 255, 255)
-    font_thickness = 5
-
-    h, w = check_empty_img.shape[:2]
-
-    print("image size =", w, h)
-
-    # 🔥 用比例，而不是寫死 640, 320
-    positions = {
-        1: (int(w * 0.15), int(h * 0.65)),  # 左椅
-        2: (int(w * 0.50), int(h * 0.70)),  # 中間椅
-        3: (int(w * 0.80), int(h * 0.65)),  # 右椅
-    }
-
-    for number, pos in positions.items():
-        text = str(number)
-        text_size = cv2.getTextSize(text, font, font_scale, font_thickness)[0]
-
-        x, y = pos
-
-        # 黑底
-        rectangle_start = (x - 15, y + 15)
-        rectangle_end = (x + text_size[0] + 15, y - text_size[1] - 15)
-        cv2.rectangle(check_empty_img, rectangle_start, rectangle_end, (0, 0, 0), cv2.FILLED)
-
-        # 數字
-        cv2.putText(
-            check_empty_img,
-            text,
-            pos,
-            font,
-            font_scale,
-            font_color,
-            font_thickness,
-            cv2.LINE_AA
-        )
-
-        # debug點
-        cv2.circle(check_empty_img, pos, 5, (0, 255, 0), -1)
-
-    return check_empty_img
-
-
-def chair_id_to_seat(chair_id):
-    if chair_id == 1:
-        return "left"
-    elif chair_id == 2:
-        return "middle"
-    elif chair_id == 3:
-        return "right"
-    return None
-
-
-BASE_URL = "http://192.168.88.89:8888"
-
-
 def send_media_task(endpoint, file_path, prompt, file_key):
     try:
         if not os.path.exists(file_path):
@@ -600,7 +238,6 @@ def send_media_task(endpoint, file_path, prompt, file_key):
     except Exception as e:
         print("[AI] connection failed:", e)
         return None
-
 def audio_drink_name(audio_path):
     prompt = '''
     Listen to the audio carefully.
@@ -636,294 +273,7 @@ def audio_drink_name(audio_path):
         customer_name = "nothing"
         favorite_drink = "nothing"
 
-    return customer_name,favorite_drink
-
-def audio_extract_name(audio_path, api_key=None, model=None):
-    prompt = """
-Listen to the audio carefully.
-
-Task:
-Extract the person's name.
-
-Rules:
-- Ignore background noise.
-- If unclear, answer: nothing
-- Return only the name, lowercase.
-- Do not add extra text.
-"""
-
-    ans = send_media_task("/Fambot", audio_path, prompt, "audio")
-    print("[AI name raw] =", ans)
-
-    if ans is None:
-        return {"success": False, "name": None}
-
-    ans = str(ans).lower().strip()
-    name = match_from_list(ans, NAME_LIST)
-
-    if name is None:
-        return {"success": False, "name": None}
-
-    return {"success": True, "name": name}
-
-
-# def audio_extract_name(audio_path, api_key, model=MODEL):
-#     try:
-#         base64_audio = encode_audio(audio_path)
-
-#         prompt = """
-# Transcribe exactly what the speaker says.
-
-# Rules:
-# - Do NOT guess.
-# - Do NOT invent names.
-# - If unclear, output exactly: unclear
-# - Output only the spoken sentence.
-
-# NAME_LIST = [
-#      "sophie", "kevin", "julia", "gabrielle", "emma", "robin",
-#     "noah", "sara", "john", "harrie", "laura", "liam",
-#     "peter", "lucas", "susan", "william"
-# ]
-
-
-# DRINK_LIST= [
-#  "lemonade", "coffee can", "fanta", "yakult",
-#     "green tea", "milk", "red bull can"
-# ]
-
-# These are the name list and drink list. When you are replying a name, make sure it is in this list. If not, find a closest name in this list comparing with the audio.
-# This also occurs to the drink.
-# """
-
-#         payload = {
-#             "model": model,
-#             "messages": [{
-#                 "role": "user",
-#                 "content": [
-#                     {"type": "text", "text": prompt},
-#                     {
-#                         "type": "input_audio",
-#                         "input_audio": {
-#                             "data": base64_audio,
-#                             "format": "wav"
-#                         }
-#                     }
-#                 ]
-#             }],
-#             "temperature": 0
-#         }
-
-#         response = requests.post(
-#             url="https://openrouter.ai/api/v1/chat/completions",
-#             headers={
-#                 "Authorization": f"Bearer {api_key}",
-#                 "Content-Type": "application/json",
-#             },
-#             data=json.dumps(payload),
-#             timeout=15
-#         )
-
-#         result = response.json()
-
-#         if "choices" not in result:
-#             return {"success": False, "name": None}
-
-#         text = result["choices"][0]["message"].get("content")
-#         if text is None:
-#             return {"success": False, "name": None}
-
-#         text = text.strip().lower()
-#         print("name transcript =", text)
-
-#         name = match_from_list(text, NAME_LIST)
-
-#         if name is None:
-#             return {"success": False, "name": None}
-
-#         return {"success": True, "name": name}
-
-#     except Exception as e:
-#         print("audio_extract_name exception:", e)
-#         return {"success": False, "name": None}
-
-def extract_name(text):
-    text = text.lower().strip()
-
-    patterns = ["my name is", "i am", "i'm"]
-
-    for p in patterns:
-        if p in text:
-            name = text.split(p)[-1].strip()
-            if name:
-                return name.split()[0]
-
-    words = text.split()
-    if len(words) == 1:
-        return words[0]
-
-    return None
-
-
-def get_name_with_retry(default_name="friend", max_retry=2):
-    for attempt in range(max_retry + 1):
-        print(f"[Name] attempt {attempt + 1}/{max_retry + 1}")
-
-        wav_path = record_audio_arecord(f"/tmp/guest_name_{attempt}.wav", 5)
-        if wav_path is None:
-            continue
-
-        res = audio_extract_name(wav_path, OPENROUTER_API_KEY)
-        print("name result =", res)
-
-        if res["success"] and res["name"] is not None:
-            return str(res["name"]).strip()
-
-    return default_name
-
-
-def get_drink_with_retry(default_drink="water", max_retry=2):
-    for attempt in range(max_retry + 1):
-        print(f"[Drink] attempt {attempt + 1}/{max_retry + 1}")
-
-        wav_path = record_audio_arecord(f"/tmp/guest_drink_{attempt}.wav", 5)
-        if wav_path is None:
-            continue
-
-        res = audio_extract_drink(wav_path, OPENROUTER_API_KEY)
-        print("drink result =", res)
-
-        if res["success"] and res["drink"] is not None:
-            return str(res["drink"]).strip()
-
-    return default_drink
-
-
-# def audio_extract_drink(audio_path, api_key, model=MODEL):
-#     try:
-#         base64_audio = encode_audio(audio_path)
-
-#         prompt = """
-# Transcribe exactly what the speaker says.
-
-# Rules:
-# - Do NOT guess.
-# - Do NOT invent drinks.
-# - If unclear, output exactly: unclear
-# - Output only the spoken sentence.
-
-
-# DRINK_LIST= [
-#  "lemonade", "coffee can", "fanta", "yakult",
-#     "green tea", "milk", "red bull can"
-# ]
-
-# These are the name list and drink list. When you are replying a name, make sure it is in this list. If not, find a closest drink in this list comparing with the audio.
-
-# """
-
-#         payload = {
-#             "model": model,
-#             "messages": [{
-#                 "role": "user",
-#                 "content": [
-#                     {"type": "text", "text": prompt},
-#                     {
-#                         "type": "input_audio",
-#                         "input_audio": {
-#                             "data": base64_audio,
-#                             "format": "wav"
-#                         }
-#                     }
-#                 ]
-#             }],
-#             "temperature": 0
-#         }
-
-#         response = requests.post(
-#             url="https://openrouter.ai/api/v1/chat/completions",
-#             headers={
-#                 "Authorization": f"Bearer {api_key}",
-#                 "Content-Type": "application/json",
-#             },
-#             data=json.dumps(payload),
-#             timeout=15
-#         )
-
-#         result = response.json()
-
-#         if "choices" not in result:
-#             return {"success": False, "drink": None}
-
-#         text = result["choices"][0]["message"].get("content")
-#         if text is None:
-#             return {"success": False, "drink": None}
-
-#         text = text.strip().lower()
-#         print("drink transcript =", text)
-
-#         drink = match_from_list(text, DRINK_LIST)
-
-#         if drink is None:
-#             return {"success": False, "drink": None}
-
-#         return {"success": True, "drink": drink}
-
-#     except Exception as e:
-#         print("audio_extract_drink exception:", e)
-#         return {"success": False, "drink": None}
-
-def audio_extract_drink(audio_path, api_key=None, model=None):
-    prompt = """
-Listen to the audio carefully.
-
-Task:
-Extract the drink.
-
-Rules:
-- Ignore background noise.
-- If unclear, answer: nothing
-- Return only the drink, lowercase.
-- Do not add extra text.
-"""
-
-    ans = send_media_task("/Fambot", audio_path, prompt, "audio")
-    print("[AI drink raw] =", ans)
-
-    if ans is None:
-        return {"success": False, "drink": None}
-
-    ans = str(ans).lower().strip()
-    drink = match_from_list(ans, DRINK_LIST)
-
-    if drink is None:
-        return {"success": False, "drink": None}
-
-    return {"success": True, "drink": drink}
-
-
-def get_name_with_retry(default_name="friend", max_retry=2):
-    for attempt in range(max_retry + 1):
-        print(f"[Name] attempt {attempt + 1}/{max_retry + 1}")
-
-        wav_path = record_audio(filename=f"/tmp/guest_name_{attempt}.wav", seconds=3)
-        if wav_path is None:
-            print("record failed")
-            continue
-
-        res = audio_extract_name(wav_path)
-        print("name result =", res)
-
-        if res["success"] and res["name"] is not None:
-            name = str(res["name"]).strip()
-            if name != "":
-                return name
-
-    print("fallback name =", default_name)
-    return default_name
-
-
-# ===== odom turn =====
+    return customer_name, favorite_drink
 def get_yaw_from_odom():
     global _odom
     q = [
@@ -934,16 +284,12 @@ def get_yaw_from_odom():
     ]
     _, _, yaw = euler_from_quaternion(q)
     return yaw
-
-
 def normalize_angle(angle):
     while angle > np.pi:
         angle -= 2 * np.pi
     while angle < -np.pi:
         angle += 2 * np.pi
     return angle
-
-
 def turn_to(angle, speed):
     max_speed = 1.82
     start = rospy.get_time()
@@ -952,75 +298,17 @@ def turn_to(angle, speed):
         yaw = get_yaw_from_odom()
         e = normalize_angle(angle - yaw)
 
-        if abs(e) < 0.01 or rospy.get_time() - start > 8:
+        if abs(e) < 0.01 or rospy.get_time() - start > 10:
             break
 
         move(0.0, max_speed * speed * e)
         rospy.Rate(20).sleep()
 
     move(0, 0)
-
-
 def turn(angle):
     yaw = get_yaw_from_odom()
     target = normalize_angle(yaw + angle)
     turn_to(target, 0.5)
-
-
-def detect_real_xyz(x1, y1, d):
-    global image
-    h, w, c = image.shape
-    y1 -= h / 2
-    x1 -= w / 2
-    y = y1 / h * 2 * d * math.tan(45.5 * 3.14159 / 360)
-    x = x1 / w * 2 * d * math.tan(58.4 * 3.14159 / 360)
-    return x, y, d
-door_baseline = None
-
-
-def set_joints(j1, j2, j3, j4, t):
-    rospy.wait_for_service("/goal_joint_space_path")
-    try:
-        s = rospy.ServiceProxy("/goal_joint_space_path", SetJointPosition)
-        req = SetJointPositionRequest()
-        req.joint_position.joint_name = ["joint1", "joint2", "joint3", "joint4"]
-        req.joint_position.position = [j1, j2, j3, j4]
-        req.path_time = t
-        return s(req)
-    except:
-        return False
-
-def draw_chair_numbers(image):
-    img = image.copy()
-
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 2.0
-    font_color = (255, 255, 255)
-    font_thickness = 5
-
-    h, w = img.shape[:2]
-
-    positions = {
-        1: (int(w * 0.15), int(h * 0.65)),  # 左
-        2: (int(w * 0.50), int(h * 0.70)),  # 中
-        3: (int(w * 0.80), int(h * 0.65)),  # 右
-    }
-
-    for number, (x, y) in positions.items():
-        text = str(number)
-        text_size = cv2.getTextSize(text, font, font_scale, font_thickness)[0]
-
-        cv2.rectangle(img, (x - 15, y + 15), (x + text_size[0] + 15, y - text_size[1] - 15), (0, 0, 0), -1)
-        cv2.putText(img, text, (x, y), font, font_scale, font_color, font_thickness, cv2.LINE_AA)
-
-    return img
-
-
-def encode_image(path):
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
-
-
 class FollowMe(object):
     def __init__(self) -> None:
         self.pre_x, self.pre_z = 0.0, 0.0
@@ -1141,285 +429,6 @@ class FollowMe(object):
         self.pre_z = cur_z
 
         return cur_x, cur_z, frame, "yes"
-
-
-def follow1():
-    global _voice
-    say("I will follow you now.")
-    print("Starting to follow the person.")
-
-    # PID variables for angular control (keep person centered)
-    ang_kp = 0.7  # stronger response
-    ang_ki = 0.001
-    ang_kd = 0.02  # Increased slightly for damping
-    ang_prev_error = 0.0
-    ang_integral = 0.0
-    ang_last_time = time.time()
-
-    # PID variables for linear control
-    desired_dist_mm = 600
-    lin_kp = 0.0005
-    lin_ki = 0.00005
-    lin_kd = 0.0003
-    lin_prev_error = 0.0
-    lin_integral = 0.0
-    lin_last_time = time.time()
-
-    stop_threshold_mm = 50  # Stop if within 50mm of target
-    braking_zone_mm = 150  # Start braking 200mm from target
-    max_forward_speed = 0.5  # Max speed (reduced for better control)
-    max_backward_speed = -0.25
-
-    person_lost_counter = 0
-    max_lost_frames = 30
-
-    while not rospy.is_shutdown():
-        msg = Twist()
-        image = _image.copy()
-        depth = _depth.copy()
-
-        if image is None or depth is None:
-            rospy.sleep(0.05)
-            continue
-
-        h, w = image.shape[:2]
-        center_x = w // 2
-
-        # Detect persons
-        poses = dnn_pose.forward(image)
-        targetx, targety, target_depth_mm = None, None, None
-        best_depth = float('inf')
-
-        for pose in poses:
-            x1, y1, x2, y2 = 10000, 10000, -1, -1
-            for cx, cy, score in pose:
-                if cx != 0 and cy != 0:
-                    x1 = int(min(x1, cx))
-                    y1 = int(min(y1, cy))
-                    x2 = int(max(x2, cx))
-                    y2 = int(max(y2, cy))
-            if x1 == 10000 or x2 == -1:
-                continue
-
-            midx = (x1 + x2) // 2
-            midy = (y1 + y2) // 2
-            d = depth[midy, midx]
-            if np.isnan(d) or d == 0:
-                region = depth[y1:y2, x1:x2]
-                if region.size > 0:
-                    d = np.median(region[region > 0])
-                else:
-                    d = float('inf')
-
-            if d < best_depth:
-                best_depth = d
-                targetx, targety = midx, midy
-                target_depth_mm = d
-
-        # Voice stop check
-        if _voice is not None:
-            sentence = _voice.text.strip()
-            if "stop" in sentence.lower():
-                say("Stopping following.")
-                _voice = None
-                return
-            _voice = None
-
-        # Person lost handling
-        if targetx is None:
-            person_lost_counter += 1
-            if person_lost_counter > max_lost_frames:
-                say("I lost you. Stopping.")
-                return
-            msg.angular.z = 0.3
-            msg.linear.x = 0.0
-            pub_cmd.publish(msg)
-            rospy.sleep(0.05)
-            continue
-        else:
-            person_lost_counter = 0
-
-        # Angular PID
-        ang_error = (targetx - center_x) / (w / 2)
-        ang_error = max(-1.0, min(1.0, ang_error))
-        now = time.time()
-        dt_ang = now - ang_last_time
-        if dt_ang > 0.1:
-            dt_ang = 0.05
-        ang_last_time = now
-        ang_integral += ang_error * dt_ang
-        ang_derivative = (ang_error - ang_prev_error) / dt_ang if dt_ang > 0 else 0
-        ang_vel = ang_kp * ang_error + ang_ki * ang_integral + ang_kd * ang_derivative
-        ang_vel = max(-0.8, min(0.8, ang_vel))
-        ang_prev_error = ang_error
-
-        # Linear PID with IMPROVED STOPPING LOGIC
-        lin_error = target_depth_mm - desired_dist_mm
-
-        # CRITICAL FIX: Stop if within threshold
-        if abs(lin_error) < stop_threshold_mm:
-            # Within 50mm of desired distance - STOP
-            lin_vel = 0.0
-            lin_integral = 0.0  # Reset integral to prevent windup
-            # print(f"Stopped at {target_depth_mm}mm (within {stop_threshold_mm}mm of target)")
-        else:
-            # Calculate PID output
-            dt_lin = now - lin_last_time
-            if dt_lin > 0.1:
-                dt_lin = 0.05
-            lin_last_time = now
-
-            # Anti-windup: limit integral accumulation
-            lin_integral += lin_error * dt_lin
-            lin_integral = max(-100, min(100, lin_integral))  # Clamp integral
-
-            lin_derivative = (lin_error - lin_prev_error) / dt_lin if dt_lin > 0 else 0
-            lin_vel = lin_kp * lin_error + lin_ki * lin_integral + lin_kd * lin_derivative
-
-            # APPLY BRAKING ZONE (gradual slowdown)
-            distance_to_target = abs(lin_error)
-            if distance_to_target < braking_zone_mm:
-                # Progressive braking: slower as you get closer
-                brake_factor = distance_to_target / braking_zone_mm
-                lin_vel = lin_vel * brake_factor
-                # print(f"Braking: {distance_to_target}mm from target, speed={lin_vel:.3f}")
-
-            # EMERGENCY STOP if too close
-            if target_depth_mm < desired_dist_mm - 100:  # 100mm too close
-                lin_vel = max(lin_vel, -0.1)  # Allow only backward or zero
-                if target_depth_mm < 500:  # Dangerously close
-                    lin_vel = -0.05  # Small reverse
-                    # print("Emergency reverse!")
-
-            # Limit speeds
-            lin_vel = max(max_backward_speed, min(max_forward_speed, lin_vel))
-
-            # Special case: moving forward but too close
-            if target_depth_mm < desired_dist_mm and lin_vel > 0:
-                lin_vel = 0  # Immediate stop
-                # print("Too close - stopping forward movement")
-
-        lin_prev_error = lin_error
-
-        # Send commands
-        msg.angular.z = -ang_vel
-        msg.linear.x = lin_vel
-        pub_cmd.publish(msg)
-
-        # Debug info
-        # print(f"Dist: {target_depth_mm:.0f}mm | Target: {desired_dist_mm}mm | Error: {lin_error:.0f}mm | Vel: {lin_vel:.3f}")
-
-        # Display
-        cv2.circle(image, (targetx, targety), 8, (0, 0, 255), -1)
-        cv2.putText(image, f"dist={target_depth_mm:.0f}/{desired_dist_mm}mm", (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        cv2.putText(image, f"vel={lin_vel:.2f}", (10, 60),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-
-        # Color code based on distance
-        if target_depth_mm < desired_dist_mm - 50:
-            cv2.putText(image, "TOO CLOSE!", (10, 90),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-        elif target_depth_mm > desired_dist_mm + 50:
-            cv2.putText(image, "TOO FAR", (10, 90),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
-
-        cv2.imshow("image", image)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
-        rospy.sleep(0.05)
-
-
-def ask_empty_chair_api(image_path):
-    base64_image = encode_image(image_path)
-
-    prompt = """
-Look at the image.
-There are three chairs labeled 1, 2, and 3.
-Tell me which chair is empty.
-
-Return JSON only:
-{"empty_chair": 1}
-"""
-
-    payload = {
-        "model": CHAIR_MODEL,
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{base64_image}"
-                        }
-                    }
-                ]
-            }
-        ],
-        "temperature": 0
-    }
-
-    try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            data=json.dumps(payload),
-            timeout=20
-        )
-
-        result = response.json()
-
-        if "choices" not in result:
-            print("API error:", result)
-            return None
-
-        answer = result["choices"][0]["message"]["content"].strip()
-
-        # clean ```json```
-        answer = re.sub(r"^```json\s*", "", answer)
-        answer = re.sub(r"^```\s*", "", answer)
-        answer = re.sub(r"\s*```$", "", answer)
-
-        data = json.loads(answer)
-        return data.get("empty_chair")
-
-    except Exception as e:
-        print("API fail:", e)
-        return None
-
-
-def detect_empty_seat(image):
-    # 存暫存圖
-    path = "/tmp/chair.jpg"
-    labeled = draw_chair_numbers(image)
-    cv2.imwrite(path, labeled)
-
-    results = []
-    for i in range(1):
-        cid = ask_empty_chair_api(path)
-        print(f"trial {i + 1} =", cid)
-        if cid in [1, 2, 3]:
-            results.append(cid)
-
-    if len(results) == 0:
-        return None
-
-    cid = max(set(results), key=results.count)
-
-    if cid == 1:
-        return "left"
-    elif cid == 2:
-        return "middle"
-    elif cid == 3:
-        return "right"
-
-
 def turn_back(speed=0.4):
     for iii in range(round(300 / 100)):
         move(-0.2, 0)
@@ -1427,170 +436,11 @@ def turn_back(speed=0.4):
     yaw = get_yaw_from_odom()
     target = normalize_angle(yaw + np.pi)
     turn_to(target, speed)
-
-
-def user_point_to_LR(pose):
-    if pose is None: return 2
-    if len(pose) == 0: return 2
-    x0, y0 = map(int, pose[8])
-    x8, y8 = map(int, pose[10])
-    if x0 == x8: return 2
-    k = (y0 - y8) / (x0 - x8)
-    if abs(k) > 1.2: return 2
-    if k > 0: return 1
-    return 0
-
-
-def wait_until_door_open():
-    global _image, _depth
-
-    depth_zero = 0
-
-    say("I am ready.")
-
-    start_time = rospy.get_time()
-
-    while not rospy.is_shutdown():
-
-        if rospy.get_time() - start_time > 20:
-            print("[DOOR] timeout")
-            cv2.destroyWindow("door_check")
-            return False
-
-        if _image is None or _depth is None:
-            rospy.sleep(0.05)
-            continue
-
-        frame = _image.copy()
-        depth = _depth.copy()
-
-        h, w = depth.shape[:2]
-
-        cx = w // 2
-        cy = h // 2
-
-        d = depth[cy, cx]
-
-        print("[DOOR] depth =", d)
-
-        cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
-        cv2.putText(frame,
-                    str(d),
-                    (cx + 10, cy),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.8,
-                    (0, 0, 255),
-                    2)
-
-        cv2.imshow("door_check", frame)
-        cv2.waitKey(1)
-
-        if d == 0:
-            depth_zero += 1
-        else:
-            depth_zero = 0
-
-        if depth_zero >= 20:
-            print("[DOOR] door opened")
-            cv2.destroyWindow("door_check")
-            return True
-
-        if d > 1700:
-            print("[DOOR] door opened")
-            cv2.destroyWindow("door_check")
-            return True
-
-        rospy.sleep(0.05)
-
-    cv2.destroyWindow("door_check")
-    return False
-
-
-def bag_xy(dir, image):
-    h, w, cc = image.shape
-    result = luggage_model(image, verbose=False)[0]
-
-    boxes = result.boxes
-
-    res = zip(boxes.cls, boxes.xyxy)
-    for c, xyxy in res:
-        x1, y1, x2, y2 = map(int, xyxy)
-        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        b = 0
-        if int((x1 + x2) / 2) > w // 2: b = 1
-        print("dir,b                           ", dir, b)
-        if dir == b:
-            cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
-            return int((x1 + x2) / 2), int((y1 + y2) / 2)
-    return 0, 0
-
-
-def bag_any_xy(image):
-    h, w, c = image.shape
-    result = luggage_model(image, verbose=False)[0]
-
-    boxes = result.boxes
-
-    best_box = None
-    best_score = -1
-
-    for cls, xyxy in zip(boxes.cls, boxes.xyxy):
-        x1, y1, x2, y2 = map(int, xyxy)
-
-        cx = (x1 + x2) // 2
-        cy = (y1 + y2) // 2
-
-        box_area = (x2 - x1) * (y2 - y1)
-        # underground
-        if cy > h * 0.9:
-            continue
-
-        # score = area + if in the middle
-        center_bias = abs(cx - w // 2)
-        score = box_area - center_bias * 200
-
-        if score > best_score:
-            best_score = score
-            best_box = (x1, y1, x2, y2)
-
-    if best_box is not None:
-        x1, y1, x2, y2 = best_box
-        cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
-        cx = (x1 + x2) // 2
-        cy = (y1 + y2) // 2
-        return cx, cy
-
-    return 0, 0
-
-
-def is_bag_handover_ready(image, depth):
-    h, w, c = image.shape
-
-    bagx, bagy = bag_any_xy(image)
-
-    if bagx == 0 and bagy == 0:
-        return False, 0, 0, 0
-
-    if bagx < 0 or bagx >= w or bagy < 0 or bagy >= h:
-        return False, 0, 0, 0
-
-    bag_depth = depth[bagy][bagx]
-    if bag_depth == 0:
-        return False, bagx, bagy, 0
-    if bag_depth > 1200:
-        return False, bagx, bagy, bag_depth
-    if bag_depth < 250:
-        return False, bagx, bagy, bag_depth
-    if bagy > h * 0.85:
-        return False, bagx, bagy, bag_depth
-    return True, bagx, bagy, bag_depth
 def get_person_feature(image, user, api_key=None):
     img_path = save_user_crop(image, user)
-
     if img_path is None:
         print("save_user_crop failed")
         return None
-
     prompt = """
 Describe the main person in the image.
 
@@ -1627,35 +477,6 @@ Rules:
         print("feature parse error:", e)
         print("raw answer =", ans)
         return None
-
-
-def feature_score(f1, f2):
-    score = 0
-
-    if f1 is None or f2 is None:
-        return -1
-
-    if f1.get("hat") == f2.get("hat"):
-        score += 2
-
-    if f1.get("glasses") == f2.get("glasses"):
-        score += 2
-
-    if f1.get("upper_color") == f2.get("upper_color"):
-        score += 5
-
-    if f1.get("skin_tone") == f2.get("skin_tone"):
-        score += 3
-
-    if f1.get("hair_length") == f2.get("hair_length"):
-        score += 2
-
-    if f1.get("age_group") == f2.get("age_group"):
-        score += 1
-
-    return score
-
-
 def feature_to_sentence(feature):
     if feature is None:
         return "I cannot describe the appearance"
@@ -1683,183 +504,23 @@ def feature_to_sentence(feature):
         return "I cannot describe the appearance"
 
     return ", ".join(desc)
-
-
-def detect_person_in_view(image, depth):
-    user = find_user(image, depth)
-    if user is not None and len(user) > 0:
-        return user
-    return None
-
-
-def find_user_seated(image, depth, conf_thres=0.25, min_box_area=4000):
-    """
-    return format:
-        None 或 [best_person]
-
-    best_person = {
-        "box": (x1, y1, x2, y2),
-        "center": (cx, cy),
-        "depth": d,
-        "conf": conf
-    }
-    """
-    try:
-        result = model(image)[0]
-    except Exception as e:
-        print("[find_user_seated] model error:", e)
-        return None
-
-    if result.boxes is None or len(result.boxes) == 0:
-        return None
-
-    print("find user seated:        found person")
-
-    h, w = image.shape[:2]
-    img_center_x = w / 2
-
-    best_person = None
-    best_score = -1e9
-
-    for box in result.boxes:
-        try:
-            cls_id = int(box.cls[0]) if len(box.cls.shape) > 0 else int(box.cls)
-            conf = float(box.conf[0]) if len(box.conf.shape) > 0 else float(box.conf)
-
-            if cls_id != 0:
-                continue
-            if conf < conf_thres:
-                continue
-
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            area = (x2 - x1) * (y2 - y1)
-            if area < min_box_area:
-                continue
-
-            cx = (x1 + x2) // 2
-            cy = (y1 + y2) // 2
-
-            print("depth:", depth[cy][cx])
-            if depth[cy][cx] > 2500:
-                continue
-
-            x_min = max(0, cx - 10)
-            x_max = min(w, cx + 10)
-            y_min = max(0, cy - 10)
-            y_max = min(h, cy + 10)
-
-            patch = depth[y_min:y_max, x_min:x_max]
-            vals = patch[patch > 0]
-            d = float(vals.mean()) if len(vals) > 0 else -1
-
-            depth_score = 0 if d < 0 else (-d * 0.01)
-            center_score = -abs(cx - img_center_x) * 0.5
-            area_score = area * 0.0005
-            conf_score = conf * 100
-
-            total_score = depth_score + center_score + area_score + conf_score
-
-            if total_score > best_score:
-                best_score = total_score
-                best_person = {
-                    "box": (x1, y1, x2, y2),
-                    "center": (cx, cy),
-                    "depth": d,
-                    "conf": conf
-                }
-
-        except Exception as e:
-            print("[find_user_seated] skip error:", e)
-            continue
-
-    if best_person is None:
-        return None
-
-    print("[find_user_seated] result =", best_person)
-    return [best_person]
-people_cnt = 0
-
-
-def get_person_feature_seated(image, user, api_key=None):
-    global people_cnt
-    if user is None or len(user) == 0:
-        return None
-
-    x1, y1, x2, y2 = user[0]["box"]
-    crop = image[y1:y2, x1:x2]
-
-    if crop is None or crop.size == 0:
-        print("invalid crop")
-        return None
-
-    img_path = "/tmp/person1.jpg"
-    people_cnt += 1
-    cv2.imwrite(img_path, crop)
-
-    prompt = """
-Describe the main person in the image.
-
-Return JSON only:
-{
-  "hat": false,
-  "glasses": false,
-  "upper_color": "blue",
-  "skin_tone": "light",
-  "hair_length": "short",
-  "age_group": "adult"
-}
-
-Rules:
-- Output JSON only.
-- Use one-word colors for upper_color.
-- skin_tone must be one of: light, medium, dark, unclear.
-- age_group must be one of: child, adult, elderly, unclear.
-- If uncertain, use "unclear".
-"""
-
-    ans = send_media_task("/Vision", img_path, prompt, "image")
-    print("[AI seated feature raw] =", ans)
-
-    if ans is None:
-        return None
-
-    try:
-        ans = str(ans).strip()
-        ans = ans.replace("```json", "").replace("```", "").strip()
-        return json.loads(ans)
-
-    except Exception as e:
-        print("feature parse error:", e)
-        print("raw answer =", ans)
-        return None
-
-
 def arm_open():
     global piper
     piper.set_gripper(1)
-
-
 def arm_close():
     global piper
     piper.set_gripper(0.2)
-
-
 def arm_extend():
     global piper
     piper.move_joint([0.592, 0.202, -1.418, 0.276, 0.584, 0.009])
-
-
 def arm_retract():
     global piper
     piper.move_joint([0, 0, 0, 0, 0, 0], 50)
-
-
 def receive_bag():
     arm_extend()
     arm_open()
 
     say("Please put your bag between my gripper.")
-    
 
     say("I detect the object in my hand.")
     say("I will close my gripper in 3 seconds. Please be careful.")
@@ -1869,193 +530,6 @@ def receive_bag():
     rospy.sleep(1)
 
     arm_retract()
-
-
-def crop_center_third(image, depth):
-    h, w = image.shape[:2]
-
-    x1 = int(w * 0.33)
-    x2 = int(w * 0.67)
-
-    y1 = int(h * 0.10)
-    y2 = int(h * 0.95)
-
-    crop_img = image[y1:y2, x1:x2]
-    crop_depth = depth[y1:y2, x1:x2]
-
-    return crop_img, crop_depth, x1, y1
-
-
-def scan_people_roles(image, depth, scan_step, guest1_feature, host_feature):
-    roles = []  # [(seat, role)]
-
-    # -------- LEFT --------
-    turn(+scan_step)
-    rospy.sleep(1.5)
-
-    image = _image.copy()
-    depth = _depth.copy()
-
-    user = find_user_seated(image, depth)
-    if user is not None and len(user) > 0:
-        role, _ = classify_person(user, image, guest1_feature, host_feature)
-        roles.append(("left", role))
-    else:
-        roles.append(("left", "empty"))
-
-    # -------- MIDDLE --------
-    turn(-scan_step)
-    rospy.sleep(1.5)
-    image = _image.copy()
-    depth = _depth.copy()
-    mid_img, mid_depth, ox, oy = crop_center_third(image, depth)
-    user = find_user_seated(mid_img, mid_depth)
-    if user is not None and len(user) > 0:
-        user = seated_user_crop_to_original(user, ox, oy)
-        role, feat = classify_person(user, image, guest1_feature, host_feature)
-        roles.append(("middle", role, feat))
-    else:
-        roles.append(("middle", "empty", None))
-
-    # -------- RIGHT --------
-    turn(-scan_step)
-    rospy.sleep(1.5)
-
-    image = _image.copy()
-    depth = _depth.copy()
-
-    user = find_user_seated(image, depth)
-    if user is not None and len(user) > 0:
-        role, _ = classify_person(user, image, guest1_feature, host_feature)
-        roles.append(("right", role))
-    else:
-        roles.append(("right", "empty"))
-
-    # -------- 回中間 --------
-    turn(+scan_step)
-    rospy.sleep(1)
-
-
-def classify_person(user, image, guest1_feature, host_feature, threshold=5):
-    feat = get_person_feature_seated(image, user)
-
-    print("detected feature =", feat)
-
-    if feat is None:
-        return "unknown", None
-
-    g1_score = feature_score(feat, guest1_feature) if guest1_feature else -1
-    h_score = feature_score(feat, host_feature) if host_feature else -1
-
-    print("g1_score =", g1_score, "host_score =", h_score)
-
-    if g1_score >= threshold and g1_score >= h_score:
-        return "guest1", feat
-
-    if h_score >= threshold and h_score > g1_score:
-        return "host", feat
-
-    return "unknown", feat
-
-
-def scan_people_roles(scan_step, guest1_feature, host_feature):
-    roles = []
-
-    global _image, _depth, _image_seq
-
-    # -------- LEFT --------
-    old_seq = _image_seq
-    turn(+scan_step)
-    if not wait_new_frame(old_seq, timeout=3.0):
-        print("warning: no new image for left")
-
-    image = _image.copy()
-    depth = _depth.copy()
-
-    user = find_user_seated(image, depth)
-    if user is not None and len(user) > 0:
-        role, feat = classify_person(user, image, guest1_feature, host_feature)
-        roles.append(("left", role, feat))
-    else:
-        roles.append(("left", "empty", None))
-
-    # -------- MIDDLE --------
-    old_seq = _image_seq
-    turn(-scan_step)
-    if not wait_new_frame(old_seq, timeout=3.0):
-        print("warning: no new image for middle")
-
-    image = _image.copy()
-    depth = _depth.copy()
-
-    user = find_user_seated(image, depth)
-    if user is not None and len(user) > 0:
-        role, feat = classify_person(user, image, guest1_feature, host_feature)
-        roles.append(("middle", role, feat))
-    else:
-        roles.append(("middle", "empty", None))
-
-    # -------- RIGHT --------
-    old_seq = _image_seq
-    turn(-scan_step)
-    if not wait_new_frame(old_seq, timeout=3.0):
-        print("warning: no new image for right")
-
-    image = _image.copy()
-    depth = _depth.copy()
-
-    user = find_user_seated(image, depth)
-    if user is not None and len(user) > 0:
-        role, feat = classify_person(user, image, guest1_feature, host_feature)
-        roles.append(("right", role, feat))
-    else:
-        roles.append(("right", "empty", None))
-
-    # -------- 回中間 --------
-    old_seq = _image_seq
-    turn(+scan_step)
-    wait_new_frame(old_seq, timeout=2.0)
-
-    return roles
-
-
-
-def crop_middle_seat(image, depth):
-    h, w = image.shape[:2]
-
-    x1 = int(w * 0.20)
-    x2 = int(w * 0.80)
-    y1 = int(h * 0.15)
-    y2 = int(h * 0.95)
-
-    crop_img = image[y1:y2, x1:x2]
-    crop_depth = depth[y1:y2, x1:x2]
-
-    return crop_img, crop_depth, x1, y1
-
-
-def seated_user_crop_to_original(user, offset_x, offset_y):
-    if user is None or len(user) == 0:
-        return user
-
-    x1, y1, x2, y2 = user[0]["box"]
-    cx, cy = user[0]["center"]
-
-    user[0]["box"] = (
-        x1 + offset_x,
-        y1 + offset_y,
-        x2 + offset_x,
-        y2 + offset_y
-    )
-
-    user[0]["center"] = (
-        cx + offset_x,
-        cy + offset_y
-    )
-
-    return user
-
-
 def get_door_depth_and_angle(image, depth):
     h, w = depth.shape[:2]
 
@@ -2094,60 +568,6 @@ def get_door_depth_and_angle(image, depth):
     print("[DOOR] angle rad =", angle)
 
     return door_depth, angle
-
-
-def find_double_door_center(depth):
-    h, w = depth.shape[:2]
-
-    # 只看中間高度，不看地板和天花
-    y1 = int(h * 0.35)
-    y2 = int(h * 0.65)
-
-    # 只看中間大範圍
-    x1 = int(w * 0.20)
-    x2 = int(w * 0.80)
-
-    roi = depth[y1:y2, x1:x2]
-
-    # 每一條 x column 取 median depth
-    col_depths = []
-    xs = []
-
-    for x in range(roi.shape[1]):
-        col = roi[:, x]
-        vals = col[col > 0]
-
-        if len(vals) < 10:
-            continue
-
-        d = float(np.median(vals))
-        col_depths.append(d)
-        xs.append(x1 + x)
-
-    if len(col_depths) < 20:
-        print("[DOOR] not enough depth columns")
-        return None, None
-
-    col_depths = np.array(col_depths)
-    xs = np.array(xs)
-
-    # 平滑
-    smooth = np.convolve(col_depths, np.ones(15) / 15, mode="same")
-
-    # 找深度變化最大的位置，通常是兩門中間縫
-    diff = np.abs(np.diff(smooth))
-    idx = int(np.argmax(diff))
-    door_center_x = int(xs[idx])
-
-    center_depth = float(np.median(col_depths))
-
-    print("[DOOR] door_center_x =", door_center_x)
-    print("[DOOR] image_center_x =", w // 2)
-    print("[DOOR] center_depth =", center_depth)
-
-    return door_center_x, center_depth
-
-
 def get_center_depth_and_turn(depth):
     h, w = depth.shape[:2]
 
@@ -2194,8 +614,6 @@ def get_center_depth_and_turn(depth):
     print("[DOOR] turn_angle =", turn_angle)
 
     return center_depth, turn_angle
-
-
 def get_real_xyz(dp, x, y, num):
     a1 = 49.5
     b1 = 60.0
@@ -2244,7 +662,6 @@ def get_real_xyz(dp, x, y, num):
     real_y = round(y * 2 * d * np.tan(a / 2) / h)
     real_x = round(x * 2 * d * np.tan(b / 2) / w)
     return real_x, real_y, d
-
 def align_and_approach_door():
     global _image, _depth
 
@@ -2275,9 +692,6 @@ def align_and_approach_door():
         move(0, 0)
 
     return True
-
-
-
 def detect_door_handle(image):
     results = door_handle_model(image, verbose=False)
     if len(results) == 0:
@@ -2295,8 +709,6 @@ def detect_door_handle(image):
         "box": (x1, y1, x2, y2),
         "conf": conf
     }
-
-
 def align_to_door_handle():
     global _image
     if _image is None:
@@ -2324,8 +736,6 @@ def align_to_door_handle():
     turn(-angle)
     rospy.sleep(0.4)
     return False
-
-
 def get_front_door_depth():
     global _depth
 
@@ -2348,8 +758,6 @@ def get_front_door_depth():
     print("[DOOR] front depth =", d)
 
     return d
-
-
 def adjust_door_distance():
     d = get_front_door_depth()
 
@@ -2374,8 +782,6 @@ def adjust_door_distance():
     else:
         print("[DOOR] good distance")
         return True
-
-
 def open_door1():
     with open('/home/pcms/antony_ws/koreadoor1.json', 'r', encoding='utf-8') as file:
         data = json.load(file)
@@ -2388,8 +794,6 @@ def open_door1():
         elif i["gripper"][0] <= 30000 and x == False:
             piper.set_gripper(0, 1000)
             x = True
-
-
 def open_door2():
     with open('/home/pcms/antony_ws/koreadoor2.json', 'r', encoding='utf-8') as file:
         data = json.load(file)
@@ -2402,8 +806,6 @@ def open_door2():
         elif i["gripper"][0] <= 30000 and x == False:
             piper.set_gripper(0, 1000)
             x = True
-
-
 def open_door3():
     with open('/home/pcms/antony_ws/koreadoor3.json', 'r', encoding='utf-8') as file:
         data = json.load(file)
@@ -2432,7 +834,7 @@ def empty_seat(img, depth_img, yolo_model):
     for detection in results:
         dx1, dy1, dx2, dy2, score, class_id = detection
         dx1, dy1, dx2, dy2, class_id = map(int, [dx1, dy1, dx2, dy2, class_id])
-        if score > 0.5 and class_id == 0 and (dy1+dy2)/2.0<h*0.4:
+        if score > 0.5 and class_id == 0 and (dy1 + dy2) / 2.0 < h * 0.4:
             if dx1 < roi_x2 and dx2 > roi_x1 and dy1 < roi_y2 and dy2 > roi_y1:
                 person_in_roi = True
                 cv2.rectangle(code_image, (roi_x1, roi_y1), (roi_x2, roi_y2), (0, 0, 255), -1)
@@ -2452,10 +854,8 @@ def empty_seat(img, depth_img, yolo_model):
 if __name__ == "__main__":
     rospy.init_node("mission1")
     rospy.loginfo("mission1 start")
-
     chassis = RobotChassis()
-    rate = rospy.Rate(20)
-
+    clear_costmaps
     _image = None
     _depth = None
     _voice = None
@@ -2474,8 +874,6 @@ if __name__ == "__main__":
 
     change_to_cam(2)
 
-    model = YOLO("yolov8n-pose.pt")
-    luggage_model = YOLO("bag_model_2026.pt")
     door_handle_model = YOLO("/home/pcms/antony_ws/door.pt")
     dnn_pose = HumanPoseEstimation(device_name="GPU")
 
@@ -2530,8 +928,7 @@ if __name__ == "__main__":
     # start point: 4.049847164040595, 1.7364938075665215, -2.844931046420003)
 
     while not rospy.is_shutdown():
-        rate.sleep()
-
+        rospy.Rate(10).sleep()
         if _image is None:
             print("image none")
             continue
@@ -2630,7 +1027,7 @@ if __name__ == "__main__":
                 if abs(e) <= 40:
                     state = 6
                     move(0, 0)
-        elif state==6:
+        elif state == 6:
             user = find_user(image, depth)
             if user is not None and len(user) > 0:
                 say("hello I am detecting your feature now, please wait")
@@ -2646,8 +1043,9 @@ if __name__ == "__main__":
                     print("feature failed, retry")
         elif state == 7:
             print("state 3: ask guest1 name and drink")
-            speak("dear guest, What is your name and what is your favourite drink? Please say it in complete sentence with close and louder voice, for example my name is fambot and I like milk")
-            guest1_name, guest1_drink = "nothing","nothing"
+            speak(
+                "dear guest, What is your name and what is your favourite drink? Please say it in complete sentence with close and louder voice, for example my name is fambot and I like milk")
+            guest1_name, guest1_drink = "nothing", "nothing"
             for i in range(3):
                 print(f"[Guest1 Name] trial {i + 1}/3")
                 wav_path = record_audio_arecord(
@@ -2659,18 +1057,18 @@ if __name__ == "__main__":
                     say("Please repeat")
                     continue
                 guest1_name1, guest1_drink1 = audio_drink_name(wav_path)
-                if guest1_name1 != "nothing": guest1_name=guest1_name1
-                if guest1_drink1 != "nothing": guest1_drink=guest1_drink1
+                if guest1_name1 != "nothing": guest1_name = guest1_name1
+                if guest1_drink1 != "nothing": guest1_drink = guest1_drink1
                 if "nothing" == guest1_name or "nothing" == guest1_drink:
                     say("Please repeat")
                 else:
                     break
-            speak_tet="your name is "+ guest1_name 
-            if guest1_name=="nothing":
+            speak_tet = "your name is " + guest1_name
+            if guest1_name == "nothing":
                 speak_tet = "I cannot get your name"
             say(speak_tet)
-            speak_tet="your favourite is "+ guest1_name 
-            if guest1_drink=="nothing":
+            speak_tet = "your favourite is " + guest1_name
+            if guest1_drink == "nothing":
                 speak_tet = "I cannot get your favourite drink"
             say(speak_tet)
             turn_back()
@@ -2679,7 +1077,7 @@ if __name__ == "__main__":
         elif state == 8:
             print("state 8: move to main point")
             clear_costmaps
-            chassis.move_to(2.533, -0.586,-3.086)
+            chassis.move_to(2.533, -0.586, -3.086)
             if chassis.status_code == 3:
                 say("arrived")
                 front_angle = get_yaw_from_odom()
@@ -2704,7 +1102,7 @@ if __name__ == "__main__":
                 print("no seats")
             else:
                 say("dear guest here is your seat")
-            #time out add later
+            # time out add later
             time.sleep(2)
             state = 10
 
@@ -2831,8 +1229,9 @@ if __name__ == "__main__":
 
             print(chassis.status_code)
         elif state == 18:
-            speak("dear guest, What is your name and what is your favourite drink? Please say it in complete sentence with close and louder voice, for example my name is fambot and I like milk")
-            guest2_name, guest2_drink = "nothing","nothing"
+            speak(
+                "dear guest, What is your name and what is your favourite drink? Please say it in complete sentence with close and louder voice, for example my name is fambot and I like milk")
+            guest2_name, guest2_drink = "nothing", "nothing"
             for i in range(3):
                 print(f"[Guest1 Name] trial {i + 1}/3")
                 wav_path = record_audio_arecord(
@@ -2844,18 +1243,18 @@ if __name__ == "__main__":
                     say("Please repeat")
                     continue
                 guest2_name1, guest2_drink1 = audio_drink_name(wav_path)
-                if guest2_name1 != "nothing": guest2_name=guest2_name1
-                if guest2_drink1 != "nothing": guest2_drink=guest2_drink1
+                if guest2_name1 != "nothing": guest2_name = guest2_name1
+                if guest2_drink1 != "nothing": guest2_drink = guest2_drink1
                 if "nothing" == guest2_name or "nothing" == guest2_drink:
                     say("Please repeat")
                 else:
                     break
-            speak_tet="your name is "+ guest2_name 
-            if guest2_name=="nothing":
+            speak_tet = "your name is " + guest2_name
+            if guest2_name == "nothing":
                 speak_tet = "I cannot get your name"
             say(speak_tet)
-            speak_tet="your favourite is "+ guest2_name 
-            if guest2_drink=="nothing":
+            speak_tet = "your favourite is " + guest2_name
+            if guest2_drink == "nothing":
                 speak_tet = "I cannot get your favourite drink"
             say(speak_tet)
             state = 19
@@ -2875,7 +1274,7 @@ if __name__ == "__main__":
             say("please follow me")
             print("state 18: move to main point")
             clear_costmaps
-            chassis.move_to(2.533, -0.586,-3.086)
+            chassis.move_to(2.533, -0.586, -3.086)
 
             if chassis.status_code == 3:
                 say("arrived")
@@ -2897,13 +1296,11 @@ if __name__ == "__main__":
                 say("dear guest here is your seat")
             time.sleep(2)
             state = 22
-        #facing
+        # facing
         elif state == 9999999:
             print("state 20 : introduce everyone")
             guest1_desc = feature_to_sentence(guest1_feature)
             guest2_desc = feature_to_sentence(guest2_feature)
-
-            # ---------- Introduce Guest2 to Host ----------
             if host_now_seat == "left":
                 turn(+scan_step)
             elif host_now_seat == "middle":
@@ -2917,8 +1314,6 @@ if __name__ == "__main__":
                 f"{guest2_name} is {guest2_desc}."
             )
             rospy.sleep(1)
-
-            # ---------- Introduce Guest2 to Guest1 ----------
             if guest1_now_seat == "left":
                 if host_now_seat == "middle":
                     turn(+scan_step)
@@ -3031,7 +1426,6 @@ if __name__ == "__main__":
 
                 x, z, code_image, yn = _fw.calc_cmd_vel(code_image, depth, cx, cy)
                 print("turn_x_z:", x, z)
-
             if x == 0 and z == 0:
                 if speak_nack >= 20:
                     say("don't walk too fast, please come back")
@@ -3046,14 +1440,12 @@ if __name__ == "__main__":
                 followmecnt = 0
             if "stop" in _voice:
                 state = -1111
-                piper.move_to_endpoint2(300,0,0,0,-1.57,0)
+                piper.move_to_endpoint2(300, 0, 0, 0, -1.57, 0)
                 piper.set_gripper(1)
-                # ******************************************************************
                 say("mission end")
             print("follow", followmecnt)
             move(x, z)
             cv2.imshow("image", image)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
-
             rospy.sleep(0.05)
