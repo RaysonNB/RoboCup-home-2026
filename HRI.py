@@ -818,30 +818,42 @@ def open_door3():
         elif i["gripper"][0] <= 30000 and x == False:
             piper.set_gripper(0, 1000)
             x = True
-def empty_seat(img, depth_img, yolo_model):
+
+
+def empty_seatt(img, depth_img, yolo_model):
     person_in_roi = False
     need_position = None
     code_image = img.copy()
     h, w, _ = code_image.shape
+
     roi_w, roi_h = 60, 60
-    roi_x1 = (w // 2) - (roi_w // 2)
-    roi_y1 = int(h * 0.8)
+    roi_cx, roi_cy = w // 2, int(h * 0.7)
+
+    roi_x1 = roi_cx - (roi_w // 2)
+    roi_y1 = roi_cy - (roi_h // 2)
     roi_x2 = roi_x1 + roi_w
     roi_y2 = roi_y1 + roi_h
-    if roi_y2 >= h: roi_y2 = h - 1
+
     cv2.rectangle(code_image, (roi_x1, roi_y1), (roi_x2, roi_y2), (0, 255, 255), 2)
+
     results = yolo_model.forward(code_image)[0]["det"]
+
     for detection in results:
         dx1, dy1, dx2, dy2, score, class_id = detection
-        dx1, dy1, dx2, dy2, class_id = map(int, [dx1, dy1, dx2, dy2, class_id])
-        if score > 0.5 and class_id == 0 and (dy1 + dy2) / 2.0 < h * 0.4:
-            if dx1 < roi_x2 and dx2 > roi_x1 and dy1 < roi_y2 and dy2 > roi_y1:
+        ix1, iy1, ix2, iy2 = map(int, [dx1, dy1, dx2, dy2])
+
+        person_cy = (iy1 + iy2) / 2.0
+
+        if score > 0.5 and class_id == 0 and person_cy > h * 0.5:
+            if ix1 < roi_x2 and ix2 > roi_x1 and iy1 < roi_y2 and iy2 > roi_y1:
                 person_in_roi = True
                 cv2.rectangle(code_image, (roi_x1, roi_y1), (roi_x2, roi_y2), (0, 0, 255), -1)
-                cx = (dx1 + dx2) // 2
-                cy = (dy1 + dy2) // 2
-                need_position = [dx1, dy1, dx2, dy2, cx, cy]
-            cv2.rectangle(code_image, (dx1, dy1), (dx2, dy2), (255, 0, 0), 2)
+                cx = (ix1 + ix2) // 2
+                cy = (iy1 + iy2) // 2
+                need_position = [ix1, iy1, ix2, iy2, cx, cy]
+
+            cv2.rectangle(code_image, (ix1, iy1), (ix2, iy2), (255, 0, 0), 2)
+
     if person_in_roi:
         move(0, 0.3)
     else:
@@ -850,7 +862,6 @@ def empty_seat(img, depth_img, yolo_model):
     cv2.imshow("Bottom ROI", code_image)
     cv2.waitKey(1)
     return person_in_roi, need_position
-
 if __name__ == "__main__":
     rospy.init_node("mission1")
     rospy.loginfo("mission1 start")
@@ -1097,7 +1108,7 @@ if __name__ == "__main__":
 
         elif state == 9:
             change_to_cam(1)  # 1 下2 上
-            in_roi, position = empty_seat(_image, _depth, dnn_yolo1)
+            in_roi, position = empty_seatt(_image, _depth, dnn_yolo1)
             if in_roi:
                 print("no seats")
             else:
@@ -1289,7 +1300,7 @@ if __name__ == "__main__":
         # state 19 : scan chairs, and check where guest1 is every turn
         elif state == 21:
             change_to_cam(1)  # 1 下2 上
-            in_roi, position = empty_seat(_image, _depth, dnn_yolo1)
+            in_roi, position = empty_seatt(_image, _depth, dnn_yolo1)
             if in_roi:
                 print("no position")
             else:
