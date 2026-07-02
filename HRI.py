@@ -826,7 +826,7 @@ def empty_seatt(img, depth_img, yolo_model):
     code_image = img.copy()
     h, w, _ = code_image.shape
 
-    roi_w, roi_h = 60, 60
+    roi_w, roi_h = 200, 60
     roi_cx, roi_cy = w // 2, int(h * 0.8)
 
     roi_x1 = roi_cx - (roi_w // 2)
