@@ -241,7 +241,7 @@ def move(dis, turn):
     pub_cmd.publish(fb)
 
 
-def say(text):
+def say(g):
     print("[robot said]: ", end=" ")
     os.system(f'espeak -s 130 "{g}"')
     # rospy.loginfo(g)
@@ -579,7 +579,7 @@ def find_user(img, depth):
             cv2.circle(image, (x, y), 3, (0, 255, 0), -1)
             if x >= w or y >= h:
                 continue
-            if depth[y][x] > 0 and depth[y][x] <= 2000:
+            if depth[y][x] > 0 and depth[y][x] <= 3000:
                 if mid_d == -1 or depth[y][x] < mid_d:
                     mid_d = depth[y][x]
         if (user_d == -1 or mid_d < user_d) and mid_d != -1:
@@ -2822,7 +2822,7 @@ def align_to_door_handle():
     cv2.circle(image, (cx, result["center"][1]), 5, (0, 0, 255), -1)
     cv2.imshow("door_handle", image)
     cv2.waitKey(1)
-    if abs(error) < 20:
+    if abs(error) < 25:
         print("Door handle aligned.")
         return True
     angle = error * 0.002
@@ -2996,7 +2996,7 @@ if __name__ == "__main__":
     host_search_count = 0
     recording_done = False
     arm_retract()
-    state = 99999
+    state = 999999 #1 #9999
     scan_step = 45 * np.pi / 180
     far_right_step = 3 * np.pi / 4
     say("I am ready")
@@ -3028,8 +3028,9 @@ if __name__ == "__main__":
         # state check
         if state == 999999:
             print("state 0: ready")
-            state = 995
-
+            state = 99999
+            say("dear host please close the door")
+            time.sleep(2)
         # elif state == 999:
         #     if wait_until_door_open():
         #         say("Door is open")
@@ -3112,7 +3113,7 @@ if __name__ == "__main__":
                 print("reach point")
                 state = 1
                 for iii in range(round(200 / 100)):
-                    move(-0.2, 0)
+                    move(0.2, 0)
                     time.sleep(0.5)
             print(chassis.status_code)
 
@@ -3129,10 +3130,9 @@ if __name__ == "__main__":
                     map(int, pose[9][:2])), list(map(int, pose[10][:2])), list(map(int, pose[0][:2]))
 
                 cx, cy = (p5[0] + p6[0]) // 2, (p5[1] + p6[1]) // 2
-                _, _, d = get_real_xyz(image, cx, cy, 2)
-                if d >= 2300 or d == 0: continue
-                if (((pose[0][2] != 0 and pose[9][2] != 0) and (p0[1] > p9[1])) or (
-                        (p0[1] > p10[1]) and (pose[0][2] != 0 and pose[10][2] != 0))) and d <= min_d:
+                _, _, d = get_real_xyz(depth, cx, cy, 2)
+                if d >= 3000 or d == 0: continue
+                if d <= min_d:
                     t_idx, final_d, min_d = i, d, d
 
             if t_idx != -1:
@@ -3144,7 +3144,7 @@ if __name__ == "__main__":
                 e = (image.shape[1] // 2) - cx
                 v = np.clip(0.001 * e, -0.45, 0.45)
                 move(0, v)
-                if abs(e) <= 25:
+                if abs(e) <= 40:
                     state = 8964
                     move(0, 0)
         elif state==8964:
@@ -3204,9 +3204,8 @@ if __name__ == "__main__":
                 print("AI name result =", res)
                 if res["success"] and res["name"] is not None:
                     name = res["name"].strip().lower()
-                    if name in NAME_LIST:
-                        guest1_name = name
-                        break
+                    guest1_name = name
+                    break
                 say("Please repeat your name.")
             if guest1_name is None:
                 guest1_name = "kevin"
@@ -3234,10 +3233,8 @@ if __name__ == "__main__":
                 print("AI drink result =", res)
                 if res["success"] and res["drink"] is not None:
                     drink = res["drink"].strip().lower()
-                    valid_drinks = [d.lower() for d in DRINK_LIST]
-                    if drink in valid_drinks:
-                        guest1_drink = DRINK_LIST[valid_drinks.index(drink)]
-                        break
+                    guest1_drink = drink
+                    break
                 say("Please repeat your drink.")
             if guest1_drink is None:
                 guest1_drink = "coffee can"
@@ -3307,14 +3304,15 @@ if __name__ == "__main__":
             else:
                 c = a
             for i in c:
-                turn_to(i)
+                turn_to(i,0.4)
                 # call_api
                 img_path = "/tmp/HRI" + str(i) + ".jpg"
                 cv2.imwrite(img_path, image)
                 prompt = '''
                         You are a seat occupancy checker.
     
-                         Look at the image and determine whether the seat directly in front of the camera is occupied.
+                         Look at the image and determine whether the seat directly in front of the camera is occupied which is empty, 
+                         but the image may also don't have any seat, in this situtation just reply yes yes yes.
     
                         A seat can be:
                         - a chair
@@ -3362,6 +3360,11 @@ if __name__ == "__main__":
             if chassis.status_code == 3:
                 print("reach guest2 interaction point")
                 start = time.time()
+                for iii in range(round(200 / 100)):
+                    move(0.2, 0)
+                    time.sleep(0.5)
+                say("dear host please close the door")
+                time.sleep(2)
                 state = 112
             print(chassis.status_code)
 
@@ -3381,7 +3384,7 @@ if __name__ == "__main__":
 
                     if detect_bell_from_file(_audio_path):
                         say("I heard the doorbell")
-                        state = 112
+                        state = 114
                     else:
                         print("not bell")
 
@@ -3431,6 +3434,9 @@ if __name__ == "__main__":
             if chassis.status_code == 3:
                 print("reach point")
                 state = 115
+                for iii in range(round(200 / 100)):
+                    move(0.2, 0)
+                    time.sleep(0.5)
             print(chassis.status_code)
 
         # state 11 : find guest 2
@@ -3447,9 +3453,8 @@ if __name__ == "__main__":
 
                 cx, cy = (p5[0] + p6[0]) // 2, (p5[1] + p6[1]) // 2
                 _, _, d = get_real_xyz(image, cx, cy, 2)
-                if d >= 2300 or d == 0: continue
-                if (((pose[0][2] != 0 and pose[9][2] != 0) and (p0[1] > p9[1])) or (
-                        (p0[1] > p10[1]) and (pose[0][2] != 0 and pose[10][2] != 0))) and d <= min_d:
+                if d >= 3000 or d == 0: continue
+                if d <= min_d:
                     t_idx, final_d, min_d = i, d, d
 
             if t_idx != -1:
@@ -3461,7 +3466,7 @@ if __name__ == "__main__":
                 e = (image.shape[1] // 2) - cx
                 v = np.clip(0.001 * e, -0.45, 0.45)
                 move(0, v)
-                if abs(e) <= 25:
+                if abs(e) <= 40:
                     state = 8965
                     move(0, 0)
 
@@ -3516,9 +3521,8 @@ if __name__ == "__main__":
                 print("AI name result =", res)
                 if res["success"] and res["name"] is not None:
                     name = res["name"].strip().lower()
-                    if name in NAME_LIST:
-                        guest2_name = name
-                        break
+                    guest2_name = name
+                    break
                 say("Please repeat your name.")
             if guest2_name is None:
                 guest2_name = "friend"
@@ -3546,10 +3550,8 @@ if __name__ == "__main__":
                 print("AI drink result =", res)
                 if res["success"] and res["drink"] is not None:
                     drink = res["drink"].strip().lower()
-                    valid_drinks = [d.lower() for d in DRINK_LIST]
-                    if drink in valid_drinks:
-                        guest2_drink = DRINK_LIST[valid_drinks.index(drink)]
-                        break
+                    guest2_drink = drink
+                    break
                 say("Please repeat your drink.")
             if guest2_drink is None:
                 guest2_drink = "water"
@@ -3617,14 +3619,15 @@ if __name__ == "__main__":
             else:
                 c = a
             for i in c:
-                turn_to(i)
+                turn_to(i,0.4)
                 # call_api
                 img_path = "/tmp/HRI" + str(i) + ".jpg"
                 cv2.imwrite(img_path, image)
                 prompt = '''
                         You are a seat occupancy checker.
 
-                         Look at the image and determine whether the seat directly in front of the camera is occupied.
+                         Look at the image and determine whether the seat directly in front of the camera is occupied which is empty, 
+                         but the image may also don't have any seat, in this situtation just reply yes yes yes.
 
                         A seat can be:
                         - a chair
@@ -3652,7 +3655,7 @@ if __name__ == "__main__":
             say("dear guest here is your seat")
             time.sleep(2)
 
-            state = 20
+            state = 21
 
         # state 20 : introduce everyone
         elif state == 20:
@@ -3802,11 +3805,13 @@ if __name__ == "__main__":
                 followmecnt = 0
             if "stop" in _voice:
                 state = -1111
+                piper.move_to_endpoint2(300,0,0,0,-1.57,0)
+                piper.set_gripper(1)
                 # ******************************************************************
                 say("mission end")
             print("follow", followmecnt)
             move(x, z)
-            cv2.imshow("image", code_image)
+            cv2.imshow("image", image)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
