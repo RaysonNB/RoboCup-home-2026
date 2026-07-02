@@ -827,7 +827,7 @@ def empty_seatt(img, depth_img, yolo_model):
     h, w, _ = code_image.shape
 
     roi_w, roi_h = 60, 60
-    roi_cx, roi_cy = w // 2, int(h * 0.7)
+    roi_cx, roi_cy = w // 2, int(h * 0.8)
 
     roi_x1 = roi_cx - (roi_w // 2)
     roi_y1 = roi_cy - (roi_h // 2)
@@ -986,7 +986,7 @@ if __name__ == "__main__":
             print("Ready to open.")
             turn(3 * np.pi / 180)
             open_door1()
-            for iii in range(round(300 / 100)):
+            for iii in range(round(200 / 100)):
                 move(-0.2, 0)
                 time.sleep(0.5)
             open_door2()
@@ -1021,7 +1021,7 @@ if __name__ == "__main__":
                 p5, p6 = list(map(int, pose[5][:2])), list(map(int, pose[6][:2]))
 
                 cx, cy = (p5[0] + p6[0]) // 2, (p5[1] + p6[1]) // 2
-                _, _, d = get_real_xyz(image, cx, cy, 2)
+                _, _, d = get_real_xyz(depth, cx, cy, 2)
                 if d >= 2000 or d == 0: continue
                 if d <= min_d:
                     t_idx, final_d, min_d = i, d, d
@@ -1056,12 +1056,13 @@ if __name__ == "__main__":
             print("state 3: ask guest1 name and drink")
             speak(
                 "dear guest, What is your name and what is your favourite drink? Please say it in complete sentence with close and louder voice, for example my name is fambot and I like milk")
+            os.system("play -q -n synth 0.2 sin 880")
             guest1_name, guest1_drink = "nothing", "nothing"
             for i in range(3):
                 print(f"[Guest1 Name] trial {i + 1}/3")
                 wav_path = record_audio_arecord(
                     "/tmp/guest1_name.wav",
-                    9
+                    12
                 )
                 if wav_path is None:
                     print("xxxxx")
@@ -1078,7 +1079,7 @@ if __name__ == "__main__":
             if guest1_name == "nothing":
                 speak_tet = "I cannot get your name"
             say(speak_tet)
-            speak_tet = "your favourite is " + guest1_name
+            speak_tet = "your favourite is " + guest1_drink
             if guest1_drink == "nothing":
                 speak_tet = "I cannot get your favourite drink"
             say(speak_tet)
@@ -1088,7 +1089,9 @@ if __name__ == "__main__":
         elif state == 8:
             print("state 8: move to main point")
             clear_costmaps
-            chassis.move_to(2.533, -0.586, -3.086)
+            
+
+            chassis.move_to(2.739,-0.327,-2.302)
             if chassis.status_code == 3:
                 say("arrived")
                 front_angle = get_yaw_from_odom()
@@ -1105,17 +1108,18 @@ if __name__ == "__main__":
                 host_seat = None
                 host_feature = None
                 state = 9
+                change_to_cam(1)
 
         elif state == 9:
-            change_to_cam(1)  # 1 下2 上
+              # 1 下2 上
             in_roi, position = empty_seatt(_image, _depth, dnn_yolo1)
             if in_roi:
                 print("no seats")
             else:
                 say("dear guest here is your seat")
-            # time out add later
-            time.sleep(2)
-            state = 10
+                # time out add later
+                time.sleep(2)
+                state = 10
 
         # state10 : turn back to front
         elif state == 10:
@@ -1163,7 +1167,7 @@ if __name__ == "__main__":
             print("Ready to open.")
             turn(3 * np.pi / 180)
             open_door1()
-            for iii in range(round(300 / 100)):
+            for iii in range(round(200 / 100)):
                 move(-0.2, 0)
                 time.sleep(0.5)
             open_door2()
@@ -1201,7 +1205,7 @@ if __name__ == "__main__":
                 p5, p6 = list(map(int, pose[5][:2])), list(map(int, pose[6][:2]))
 
                 cx, cy = (p5[0] + p6[0]) // 2, (p5[1] + p6[1]) // 2
-                _, _, d = get_real_xyz(image, cx, cy, 2)
+                _, _, d = get_real_xyz(depth, cx, cy, 2)
                 if d >= 2000 or d == 0: continue
                 if d <= min_d:
                     t_idx, final_d, min_d = i, d, d
@@ -1242,12 +1246,13 @@ if __name__ == "__main__":
         elif state == 18:
             speak(
                 "dear guest, What is your name and what is your favourite drink? Please say it in complete sentence with close and louder voice, for example my name is fambot and I like milk")
+            os.system("play -q -n synth 0.2 sin 880")
             guest2_name, guest2_drink = "nothing", "nothing"
             for i in range(3):
                 print(f"[Guest1 Name] trial {i + 1}/3")
                 wav_path = record_audio_arecord(
                     "/tmp/guest2_name.wav",
-                    9
+                    12
                 )
                 if wav_path is None:
                     print("xxxxx")
@@ -1264,7 +1269,7 @@ if __name__ == "__main__":
             if guest2_name == "nothing":
                 speak_tet = "I cannot get your name"
             say(speak_tet)
-            speak_tet = "your favourite is " + guest2_name
+            speak_tet = "your favourite is " + guest2_drink
             if guest2_drink == "nothing":
                 speak_tet = "I cannot get your favourite drink"
             say(speak_tet)
@@ -1285,8 +1290,7 @@ if __name__ == "__main__":
             say("please follow me")
             print("state 18: move to main point")
             clear_costmaps
-            chassis.move_to(2.533, -0.586, -3.086)
-
+            chassis.move_to(2.739,-0.327,-2.302)
             if chassis.status_code == 3:
                 say("arrived")
 
@@ -1295,11 +1299,12 @@ if __name__ == "__main__":
                 guest1_now_seat = None
 
                 state = 21
+                change_to_cam(1)  
 
         # scan seats (loop state)
         # state 19 : scan chairs, and check where guest1 is every turn
         elif state == 21:
-            change_to_cam(1)  # 1 下2 上
+            # 1 下2 上
             in_roi, position = empty_seatt(_image, _depth, dnn_yolo1)
             if in_roi:
                 print("no position")
