@@ -672,7 +672,7 @@ if __name__ == "__main__":
             time.sleep(0.5)
             move(0.12,0)
             time.sleep(0.05)
-            turn(8 * np.pi / 180)
+            turn(5 * np.pi / 180)
             time.sleep(0.5)
             state = 3
         elif state == 3:
@@ -682,7 +682,7 @@ if __name__ == "__main__":
             piper.move_to_endpoint2(330,-320,0,0,0,-np.pi/2,n=100)
             piper.set_gripper(0)
             _, _, _1yaw = get_odom_pose()
-            turn(-8 * np.pi / 180)
+            turn(-5 * np.pi / 180)
             time.sleep(0.5)
             for iii in range(round(distance_vv / 100)):
                 check_wether_turned_while_moving(_1yaw)
@@ -745,13 +745,14 @@ if __name__ == "__main__":
                     piper.set_gripper(0,1000)
                     x = True
                 print(i)
-            for i in range(5):
+            for i in range(7):
                 move(-0.2,0)
                 time.sleep(0.5)
             piper.move_to_endpoint2(100,200,0,0,0,0)
 
             state = 8
         elif state == 8:
+            clear_costmaps
             chassis.move_to(2.970674933166167, 4.888803384574086, 1.7482325337837898)
             moving = False
             if chassis.status_code == 3:
@@ -771,14 +772,7 @@ if __name__ == "__main__":
                     piper.set_gripper(0,1000)
                     x = True
                 print(i)
-            say("dear host, please get the clothes  in 3 seconds")
-            say("3")
-            say("2")
-            say("1")
-            piper.set_gripper(1,1000)
-            for i in range(5):
-                move(-0.2,0)
-                time.sleep(0.5)
+            say("mission end")
 
         cv2.imshow("image", arm_img)
         key = cv2.waitKey(1)
