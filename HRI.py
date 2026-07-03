@@ -25,6 +25,7 @@ from piper_sdk_demo import *
 import numpy as np
 import json
 from cv_bridge import CvBridge
+
 bridge = CvBridge()
 clear_costmaps = rospy.ServiceProxy("/move_base/clear_costmaps", Empty)
 _image = None
@@ -45,17 +46,24 @@ ALSA_DEVICE = "pulse"
 prp = 0
 BASE_URL = "http://192.168.88.89:8888"
 
+
 def callback_voice(msg):
     global _voice
     _voice = msg
+
+
 def callback_odom(msg):
     global _odom
     _odom = msg
+
+
 def callback_path(msg):
     global _audio_path, _new_audio_flag
     _audio_path = msg.data
     _new_audio_flag = True
     print("new audio path =", _audio_path)
+
+
 def callback_image(msg):
     global _image, _image_seq
     try:
@@ -63,6 +71,8 @@ def callback_image(msg):
         _image_seq += 1
     except Exception as e:
         print("callback_image error:", e)
+
+
 def callback_depth(msg):
     global _depth, _depth_seq
     try:
@@ -70,24 +80,34 @@ def callback_depth(msg):
         _depth_seq += 1
     except Exception as e:
         print("callback_depth error:", e)
+
+
 def callback_Imu(msg):
     global _Imu
     _Imu = msg
+
+
 def move(dis, turn):
     fb = Twist()
     fb.linear.x = dis
     fb.angular.z = turn
     pub_cmd.publish(fb)
+
+
 def say(g):
     print("[robot said]: ", end=" ")
     os.system(f'espeak -s 130 "{g}"')
     print(g)
     time.sleep(0.5)
+
+
 def speak(g):
     print("[robot said]: ", end=" ")
     os.system(f'espeak -s 110 "{g}"')
     print(g)
     time.sleep(0.5)
+
+
 def get_pose_box(user, image_shape, padding=20):
     if user is None or len(user) == 0:
         return None
@@ -111,6 +131,8 @@ def get_pose_box(user, image_shape, padding=20):
     y2 = min(h - 1, max(ys) + padding)
 
     return x1, y1, x2, y2
+
+
 def record_audio_arecord(filename="/tmp/guest.wav", seconds=5):
     if os.path.exists(filename):
         print("file exists")
@@ -154,6 +176,8 @@ def record_audio_arecord(filename="/tmp/guest.wav", seconds=5):
         return None
 
     return filename
+
+
 def save_user_crop(image, user, save_path=None):
     global prp
     box = get_pose_box(user, image.shape)
@@ -175,6 +199,8 @@ def save_user_crop(image, user, save_path=None):
         cv2.imwrite("/tmp/person0.jpg", crop)
         prp += 1
     return save_path
+
+
 def find_user(img, depth):
     global model
     h, w = depth.shape
@@ -195,6 +221,8 @@ def find_user(img, depth):
             user_d = mid_d
             user = pose
     return user
+
+
 def change_to_cam(idx):
     global _sub_cam_image, _sub_cam_depth, _current_cam
     _current_cam = idx
@@ -210,6 +238,9 @@ def change_to_cam(idx):
     elif idx == 2:
         _sub_cam_image = rospy.Subscriber("/cam1/color/image_raw", Image, callback_image)
         _sub_cam_depth = rospy.Subscriber("/cam1/depth/image_raw", Image, callback_depth)
+    time.sleep(1)
+
+
 def send_media_task(endpoint, file_path, prompt, file_key):
     try:
         if not os.path.exists(file_path):
@@ -226,7 +257,7 @@ def send_media_task(endpoint, file_path, prompt, file_key):
                 f"{BASE_URL}{endpoint}",
                 files=files,
                 data=data,
-                timeout=60
+                timeout=30
             )
 
         if response.status_code == 200:
@@ -238,6 +269,8 @@ def send_media_task(endpoint, file_path, prompt, file_key):
     except Exception as e:
         print("[AI] connection failed:", e)
         return None
+
+
 def audio_drink_name(audio_path):
     prompt = '''
     Listen to the audio carefully.
@@ -274,6 +307,8 @@ def audio_drink_name(audio_path):
         favorite_drink = "nothing"
 
     return customer_name, favorite_drink
+
+
 def get_yaw_from_odom():
     global _odom
     q = [
@@ -284,12 +319,16 @@ def get_yaw_from_odom():
     ]
     _, _, yaw = euler_from_quaternion(q)
     return yaw
+
+
 def normalize_angle(angle):
     while angle > np.pi:
         angle -= 2 * np.pi
     while angle < -np.pi:
         angle += 2 * np.pi
     return angle
+
+
 def turn_to(angle, speed):
     max_speed = 1.82
     start = rospy.get_time()
@@ -305,10 +344,14 @@ def turn_to(angle, speed):
         rospy.Rate(20).sleep()
 
     move(0, 0)
+
+
 def turn(angle):
     yaw = get_yaw_from_odom()
     target = normalize_angle(yaw + angle)
     turn_to(target, 0.5)
+
+
 class FollowMe(object):
     def __init__(self) -> None:
         self.pre_x, self.pre_z = 0.0, 0.0
@@ -429,6 +472,8 @@ class FollowMe(object):
         self.pre_z = cur_z
 
         return cur_x, cur_z, frame, "yes"
+
+
 def turn_back(speed=0.4):
     for iii in range(round(300 / 100)):
         move(-0.2, 0)
@@ -436,6 +481,8 @@ def turn_back(speed=0.4):
     yaw = get_yaw_from_odom()
     target = normalize_angle(yaw + np.pi)
     turn_to(target, speed)
+
+
 def get_person_feature(image, user, api_key=None):
     img_path = save_user_crop(image, user)
     if img_path is None:
@@ -477,6 +524,8 @@ Rules:
         print("feature parse error:", e)
         print("raw answer =", ans)
         return None
+
+
 def feature_to_sentence(feature):
     if feature is None:
         return "I cannot describe the appearance"
@@ -504,32 +553,42 @@ def feature_to_sentence(feature):
         return "I cannot describe the appearance"
 
     return ", ".join(desc)
+
+
 def arm_open():
     global piper
     piper.set_gripper(1)
+
+
 def arm_close():
     global piper
     piper.set_gripper(0.2)
+
+
 def arm_extend():
     global piper
     piper.move_joint([0.592, 0.202, -1.418, 0.276, 0.584, 0.009])
+
+
 def arm_retract():
     global piper
     piper.move_joint([0, 0, 0, 0, 0, 0], 50)
+
+
 def receive_bag():
     arm_extend()
     arm_open()
 
     say("Please put your bag between my gripper.")
-
+    time.sleep(2)
     say("I detect the object in my hand.")
     say("I will close my gripper in 3 seconds. Please be careful.")
     rospy.sleep(3)
-
     arm_close()
     rospy.sleep(1)
-
     arm_retract()
+
+
 def get_door_depth_and_angle(image, depth):
     h, w = depth.shape[:2]
 
@@ -568,6 +627,8 @@ def get_door_depth_and_angle(image, depth):
     print("[DOOR] angle rad =", angle)
 
     return door_depth, angle
+
+
 def get_center_depth_and_turn(depth):
     h, w = depth.shape[:2]
 
@@ -614,6 +675,8 @@ def get_center_depth_and_turn(depth):
     print("[DOOR] turn_angle =", turn_angle)
 
     return center_depth, turn_angle
+
+
 def get_real_xyz(dp, x, y, num):
     a1 = 49.5
     b1 = 60.0
@@ -662,6 +725,8 @@ def get_real_xyz(dp, x, y, num):
     real_y = round(y * 2 * d * np.tan(a / 2) / h)
     real_x = round(x * 2 * d * np.tan(b / 2) / w)
     return real_x, real_y, d
+
+
 def align_and_approach_door():
     global _image, _depth
 
@@ -692,6 +757,8 @@ def align_and_approach_door():
         move(0, 0)
 
     return True
+
+
 def detect_door_handle(image):
     results = door_handle_model(image, verbose=False)
     if len(results) == 0:
@@ -709,6 +776,8 @@ def detect_door_handle(image):
         "box": (x1, y1, x2, y2),
         "conf": conf
     }
+
+
 def align_to_door_handle():
     global _image
     if _image is None:
@@ -736,6 +805,8 @@ def align_to_door_handle():
     turn(-angle)
     rospy.sleep(0.4)
     return False
+
+
 def get_front_door_depth():
     global _depth
 
@@ -758,6 +829,8 @@ def get_front_door_depth():
     print("[DOOR] front depth =", d)
 
     return d
+
+
 def adjust_door_distance():
     d = get_front_door_depth()
 
@@ -782,6 +855,8 @@ def adjust_door_distance():
     else:
         print("[DOOR] good distance")
         return True
+
+
 def open_door1():
     with open('/home/pcms/antony_ws/koreadoor1.json', 'r', encoding='utf-8') as file:
         data = json.load(file)
@@ -794,6 +869,9 @@ def open_door1():
         elif i["gripper"][0] <= 30000 and x == False:
             piper.set_gripper(0, 1000)
             x = True
+    time.sleep(0.5)
+
+
 def open_door2():
     with open('/home/pcms/antony_ws/koreadoor2.json', 'r', encoding='utf-8') as file:
         data = json.load(file)
@@ -806,6 +884,9 @@ def open_door2():
         elif i["gripper"][0] <= 30000 and x == False:
             piper.set_gripper(0, 1000)
             x = True
+    time.sleep(0.5)
+
+
 def open_door3():
     with open('/home/pcms/antony_ws/koreadoor3.json', 'r', encoding='utf-8') as file:
         data = json.load(file)
@@ -818,6 +899,7 @@ def open_door3():
         elif i["gripper"][0] <= 30000 and x == False:
             piper.set_gripper(0, 1000)
             x = True
+    time.sleep(0.5)
 
 
 def empty_seatt(img, depth_img, yolo_model):
@@ -862,6 +944,8 @@ def empty_seatt(img, depth_img, yolo_model):
     cv2.imshow("Bottom ROI", code_image)
     cv2.waitKey(1)
     return person_in_roi, need_position
+
+
 if __name__ == "__main__":
     rospy.init_node("mission1")
     rospy.loginfo("mission1 start")
@@ -1089,9 +1173,7 @@ if __name__ == "__main__":
         elif state == 8:
             print("state 8: move to main point")
             clear_costmaps
-            
-
-            chassis.move_to(2.739,-0.327,-2.302)
+            chassis.move_to(2.739, -0.327, -2.302)
             if chassis.status_code == 3:
                 say("arrived")
                 front_angle = get_yaw_from_odom()
@@ -1109,14 +1191,13 @@ if __name__ == "__main__":
                 host_feature = None
                 state = 9
                 change_to_cam(1)
-
         elif state == 9:
-              # 1 下2 上
+            # 1 下2 上
             in_roi, position = empty_seatt(_image, _depth, dnn_yolo1)
             if in_roi:
                 print("no seats")
             else:
-                say("dear guest here is your seat")
+                say("dear guest the direction i am facing is your seat")
                 # time out add later
                 time.sleep(2)
                 state = 10
@@ -1131,7 +1212,6 @@ if __name__ == "__main__":
             print("host_seat =", host_seat)
             print("host_feature =", host_feature)
             state = 11
-
         elif state == 11:
             print("[STATE 10.5] MOVE_TO_GUEST2")
             say("moving to guest 2 interaction point")
@@ -1178,7 +1258,6 @@ if __name__ == "__main__":
             arm_retract()
             change_to_cam(2)
             state = 14
-
         # state 114: walk into the room
         elif state == 14:
             print("[STATE 114] MOVE_TO_ROOM")
@@ -1290,7 +1369,7 @@ if __name__ == "__main__":
             say("please follow me")
             print("state 18: move to main point")
             clear_costmaps
-            chassis.move_to(2.739,-0.327,-2.302)
+            chassis.move_to(2.739, -0.327, -2.302)
             if chassis.status_code == 3:
                 say("arrived")
 
@@ -1299,19 +1378,19 @@ if __name__ == "__main__":
                 guest1_now_seat = None
 
                 state = 21
-                change_to_cam(1)  
+                change_to_cam(1)
 
-        # scan seats (loop state)
+                # scan seats (loop state)
         # state 19 : scan chairs, and check where guest1 is every turn
         elif state == 21:
-            # 1 下2 上
             in_roi, position = empty_seatt(_image, _depth, dnn_yolo1)
             if in_roi:
-                print("no position")
+                print("no seats")
             else:
-                say("dear guest here is your seat")
-            time.sleep(2)
-            state = 22
+                say("dear guest the direction i am facing is your seat")
+                # time out add later
+                time.sleep(2)
+                state = 22
         # facing
         elif state == 9999999:
             print("state 20 : introduce everyone")
@@ -1402,7 +1481,7 @@ if __name__ == "__main__":
             say("3")
             say("2")
             say("1")
-            state = 22
+            state = 23
         # state 21 : follow host
         elif state == 23:
             msg = Twist()
@@ -1423,7 +1502,7 @@ if __name__ == "__main__":
                 cv2.circle(code_image, p6, 5, (0, 0, 255), -1)
                 cv2.circle(code_image, (cx, cy), 5, (0, 255, 0), -1)
                 _, _, d = get_real_xyz(depth, cx, cy, 2)
-                if d >= 1800 or d == 0: continue
+                if d >= 2000 or d == 0: continue
                 if (d != 0 and d < min_d):
                     t_idx = i
                     min_d = d
@@ -1444,7 +1523,7 @@ if __name__ == "__main__":
                 print("turn_x_z:", x, z)
             if x == 0 and z == 0:
                 if speak_nack >= 20:
-                    say("don't walk too fast, please come back")
+                    say("dear host don't walk too fast, please come back")
                     speak_nack = 0
                 speak_nack += 1
                 followmecnt += 1
