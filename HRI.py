@@ -2,6 +2,8 @@
 from std_msgs.msg import String
 from std_srvs.srv import Empty
 from piper_sdk_demo import KindaPiper
+from tf.transformations import euler_from_quaternion
+import tf
 from pcms.openvino_models import *
 from pcms.pytorch_models import *
 from typing import Tuple
@@ -103,7 +105,7 @@ def say(g):
 
 def speak(g):
     print("[robot said]: ", end=" ")
-    os.system(f'espeak -s 110 "{g}"')
+    os.system(f'espeak -s 135 "{g}"')
     print(g)
     time.sleep(0.5)
 
@@ -474,7 +476,7 @@ class FollowMe(object):
         return cur_x, cur_z, frame, "yes"
 
 
-def turn_back(speed=0.4):
+def turn_back(speed=0.5):
     for iii in range(round(300 / 100)):
         move(-0.2, 0)
         time.sleep(0.5)
@@ -567,6 +569,7 @@ def arm_close():
 
 def arm_extend():
     global piper
+
     piper.move_joint([0.592, 0.202, -1.418, 0.276, 0.584, 0.009])
 
 
@@ -576,16 +579,15 @@ def arm_retract():
 
 
 def receive_bag():
-    arm_extend()
+    piper.move_joint([0, 1.1, -1.1, 0, 0, 0])
     arm_open()
 
-    say("Please put your bag between my gripper.")
+    say("Please hang your bag between my gripper.")
     time.sleep(2)
-    say("I detect the object in my hand.")
     say("I will close my gripper in 3 seconds. Please be careful.")
-    rospy.sleep(3)
+    rospy.sleep(2)
     arm_close()
-    rospy.sleep(1)
+    rospy.sleep(0.5)
     arm_retract()
 
 
@@ -944,6 +946,21 @@ def empty_seatt(img, depth_img, yolo_model):
     cv2.imshow("Bottom ROI", code_image)
     cv2.waitKey(1)
     return person_in_roi, need_position
+def get_odom_pose():
+    """替代原有的 get_map_coords，僅使用里程計 (Odom) 獲取當前位置與角度"""
+    try:
+        # 改為監聽 /odom 到 /base_link 的轉換，不使用 /map
+        (trans, rot) = tf_listener.lookupTransform('/odom', '/base_link', rospy.Time(0))
+        euler = tf.transformations.euler_from_quaternion(rot)
+        yaw = euler[2]
+        return trans[0], trans[1], yaw
+    except Exception as e:
+        # 如果 TF 抓不到，則從 callback 獲取的 _odom 訊息提取
+        if _odom is not None:
+            q = _odom.pose.pose.orientation
+            euler = tf.transformations.euler_from_quaternion([q.x, q.y, q.z, q.w])
+            return _odom.pose.pose.position.x, _odom.pose.pose.position.y, euler[2]
+        return 0, 0, 0
 
 
 if __name__ == "__main__":
@@ -966,7 +983,7 @@ if __name__ == "__main__":
 
     pub_speaker = rospy.Publisher("/speaker/say", String, queue_size=10)
     pub_cmd = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
-
+    tf_listener = tf.TransformListener()
     change_to_cam(2)
 
     door_handle_model = YOLO("/home/pcms/antony_ws/door.pt")
@@ -1019,6 +1036,7 @@ if __name__ == "__main__":
     scan_step = 45 * np.pi / 180
     far_right_step = 3 * np.pi / 4
     say("I am ready")
+    time.sleep(2)
     number_seat = 5
     # start point: 4.049847164040595, 1.7364938075665215, -2.844931046420003)
 
@@ -1048,8 +1066,7 @@ if __name__ == "__main__":
             print("state 0: ready")
             state = 2
             say("dear host please close the door")
-            time.sleep(3)
-            say("moving to door")
+            time.sleep(2)
         elif state == 2:
             clear_costmaps
             chassis.move_to(1.1639211287046005, 0.4159578853659312, -3.1190504833965833)
@@ -1082,7 +1099,6 @@ if __name__ == "__main__":
             say("please wait for a moment")
             change_to_cam(2)
             state = 4
-            say("moving to room")
         elif state == 4:
             print("[STATE 9999] MOVE_TO_ROOM")
             clear_costmaps
@@ -1090,7 +1106,7 @@ if __name__ == "__main__":
             if chassis.status_code == 3:
                 print("arrived")
                 state = 5
-                for iii in range(round(200 / 100)):
+                for iii in range(round(300 / 100)):
                     move(0.2, 0)
                     time.sleep(0.5)
             print(chassis.status_code)
@@ -1106,7 +1122,7 @@ if __name__ == "__main__":
 
                 cx, cy = (p5[0] + p6[0]) // 2, (p5[1] + p6[1]) // 2
                 _, _, d = get_real_xyz(depth, cx, cy, 2)
-                if d >= 2300 or d == 0: continue
+                if d >= 2000 or d == 0: continue
                 if d <= min_d:
                     t_idx, final_d, min_d = i, d, d
 
@@ -1119,10 +1135,10 @@ if __name__ == "__main__":
                 e = (image.shape[1] // 2) - cx
                 v = np.clip(0.001 * e, -0.45, 0.45)
                 move(0, v)
-                if abs(e) <= 40:
-                    state = 6
+                if abs(e) <= 50:
+                    state = 7
                     move(0, 0)
-        elif state == 6:
+        elif state == 6: #nope
             user = find_user(image, depth)
             if user is not None and len(user) > 0:
                 say("hello I am detecting your feature now, please wait")
@@ -1138,15 +1154,14 @@ if __name__ == "__main__":
                     print("feature failed, retry")
         elif state == 7:
             print("state 3: ask guest1 name and drink")
-            speak(
-                "dear guest, What is your name and what is your favourite drink? Please say it in complete sentence with close and louder voice, for example my name is fambot and I like milk")
+            speak("dear guest, What is your name and what is your favourite drink? Please say it in complete sentence, for example my name is fambot and I like milk")
             os.system("play -q -n synth 0.2 sin 880")
             guest1_name, guest1_drink = "nothing", "nothing"
             for i in range(3):
                 print(f"[Guest1 Name] trial {i + 1}/3")
                 wav_path = record_audio_arecord(
                     "/tmp/guest1_name.wav",
-                    12
+                    10
                 )
                 if wav_path is None:
                     print("xxxxx")
@@ -1197,10 +1212,10 @@ if __name__ == "__main__":
             if in_roi:
                 print("no seats")
             else:
-                say("dear guest the direction i am facing is your seat")
+                say("dear guest the direction i am facing is your seat, please take a seat")
                 # time out add later
-                time.sleep(2)
-                state = 10
+                _, _, _1yaw = get_odom_pose()
+                state = 12
 
         # state10 : turn back to front
         elif state == 10:
@@ -1211,23 +1226,10 @@ if __name__ == "__main__":
             print("guest1_seat =", guest1_seat)
             print("host_seat =", host_seat)
             print("host_feature =", host_feature)
-            state = 11
-        elif state == 11:
-            print("[STATE 10.5] MOVE_TO_GUEST2")
-            say("moving to guest 2 interaction point")
-            clear_costmaps
-            chassis.move_to(1.9089344791625311, 0.06949383359396662, 3.0934575863400777)
-            if chassis.status_code == 3:
-                print("arrived")
-                start = time.time()
-                say("dear host please close the door")
-                time.sleep(3)
-                state = 12
-            print(chassis.status_code)
+            state = 12
 
         elif state == 12:
             print("[STATE 99999] move to door")
-            say("moving to door")
             clear_costmaps
             chassis.move_to(1.1639211287046005, 0.4159578853659312, -3.1190504833965833)
             if chassis.status_code == 3:
@@ -1261,13 +1263,12 @@ if __name__ == "__main__":
         # state 114: walk into the room
         elif state == 14:
             print("[STATE 114] MOVE_TO_ROOM")
-            say("moving to room")
             clear_costmaps
             chassis.move_to(1.9089344791625311, 0.06949383359396662, 3.0934575863400777)
             if chassis.status_code == 3:
                 print("arrived")
                 state = 15
-                for iii in range(round(200 / 100)):
+                for iii in range(round(300 / 100)):
                     move(0.2, 0)
                     time.sleep(0.5)
             print(chassis.status_code)
@@ -1285,7 +1286,7 @@ if __name__ == "__main__":
 
                 cx, cy = (p5[0] + p6[0]) // 2, (p5[1] + p6[1]) // 2
                 _, _, d = get_real_xyz(depth, cx, cy, 2)
-                if d >= 2300 or d == 0: continue
+                if d >= 2000 or d == 0: continue
                 if d <= min_d:
                     t_idx, final_d, min_d = i, d, d
 
@@ -1298,7 +1299,7 @@ if __name__ == "__main__":
                 e = (image.shape[1] // 2) - cx
                 v = np.clip(0.001 * e, -0.45, 0.45)
                 move(0, v)
-                if abs(e) <= 40:
+                if abs(e) <= 50:
                     state = 16
                     move(0, 0)
 
@@ -1311,7 +1312,6 @@ if __name__ == "__main__":
         # state 1275: move to guest2 interaction point
         elif state == 17:
             print("[STATE 1275] MOVE_TO_GUEST2 interaction point")
-            say("moving interaction point")
             clear_costmaps
             chassis.move_to(1.1639211287046005, 0.4159578853659312, -3.1190504833965833)
             if chassis.status_code == 3:
@@ -1323,15 +1323,14 @@ if __name__ == "__main__":
 
             print(chassis.status_code)
         elif state == 18:
-            speak(
-                "dear guest, What is your name and what is your favourite drink? Please say it in complete sentence with close and louder voice, for example my name is fambot and I like milk")
+            speak( "dear guest, What is your name and what is your favourite drink? Please say it in complete sentence, for example my name is fambot and I like milk")
             os.system("play -q -n synth 0.2 sin 880")
             guest2_name, guest2_drink = "nothing", "nothing"
             for i in range(3):
                 print(f"[Guest1 Name] trial {i + 1}/3")
                 wav_path = record_audio_arecord(
                     "/tmp/guest2_name.wav",
-                    12
+                    10
                 )
                 if wav_path is None:
                     print("xxxxx")
@@ -1355,9 +1354,6 @@ if __name__ == "__main__":
             state = 19
 
         elif state == 19:
-            say(f"now I will tell you the feature of the first guest")
-            guest1_desc = feature_to_sentence(guest1_feature)
-            say(f"the first guest is {guest1_desc}")
             change_to_cam(1)
             print("state 155: receive bag")
             receive_bag()
@@ -1387,9 +1383,22 @@ if __name__ == "__main__":
             if in_roi:
                 print("no seats")
             else:
-                say("dear guest the direction i am facing is your seat")
+                say("dear guest the direction i am facing is your seat, please take a seat")
                 # time out add later
-                time.sleep(2)
+                time.sleep(3)
+                say(
+                f"{guest2_name}, this is {guest1_name}. "
+                f"{guest1_name} likes {guest1_drink}. "
+                f"{guest1_name} is {guest1_desc}."
+                )
+                guest1_desc = feature_to_sentence(guest1_feature)
+                say(f"{guest1_name} is {guest1_desc}")
+                turn_to(nigga1,0.4)
+                say(
+                f"{guest1_name}, this is {guest2_name}. "
+                f"{guest2_name} likes {guest2_drink}. "
+                f"{guest2_name} is {guest2_desc}."
+                )
                 state = 22
         # facing
         elif state == 9999999:
