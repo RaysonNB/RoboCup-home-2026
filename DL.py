@@ -692,7 +692,7 @@ if __name__ == "__main__":
             time.sleep(0.5)
             turn(48*np.pi/180)
             _, _, _1yaw = get_odom_pose()
-            for iii in range(round(1800 / 100)):
+            for iii in range(round(1900 / 100)):
                 check_wether_turned_while_moving(_1yaw)
                 move(0.2, 0)
                 time.sleep(0.5)
@@ -704,7 +704,7 @@ if __name__ == "__main__":
         
         elif state == 4:
             # place the clothing on the table
-            piper.move_to_endpoint2(100,500,0,0,0,0,n=100)
+            piper.move_to_endpoint2(0,500,0,0,0,0,n=100)
             time.sleep(0.5)
             piper.move_to_endpoint2(320,500,0,0,0,0,n=100)
             turn_to(0,0.4)
@@ -772,6 +772,9 @@ if __name__ == "__main__":
                     piper.set_gripper(0,1000)
                     x = True
                 print(i)
+            for i in range(5):
+                move(-0.2,0)
+                time.sleep(0.5)
             say("mission end")
 
         cv2.imshow("image", arm_img)
