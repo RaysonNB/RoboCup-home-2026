@@ -429,7 +429,30 @@ def turn(angle: float):
 def turn_to(angle: float, speed: float):
     global _odom
     max_speed = 1.82
+
     limit_time = 8
+    start_time = rospy.get_time()
+
+    while not rospy.is_shutdown():
+        if _odom is None:
+            move(0.0, 0.0)
+            return
+
+        yaw = get_yaw_from_odom()
+        e = normalize_angle(angle - yaw)
+
+        if abs(e) < 0.01 or rospy.get_time() - start_time > limit_time:
+            break
+
+        move(0.0, max_speed * speed * e)
+        rospy.Rate(20).sleep()
+
+    move(0.0, 0.0)
+def turn_to1(angle: float, speed: float):
+    global _odom
+    max_speed = 1.82
+
+    limit_time = 12
     start_time = rospy.get_time()
 
     while not rospy.is_shutdown():
@@ -577,10 +600,10 @@ if __name__ == "__main__":
     piper.connect()
 
     # Variables
-    state = 0
+    state = 6
     # end_location = (2.26,3.83,0)  # x, y
     # end_location_2 = (1.429,4.427,1.715) 
-    end_location = (2.959,3.836,0.85) 
+    end_location = (3.75,3.75,1.1) 
     end_location2 = (1.339,4.472,-0.001) 
     washing_machine =  (3.44164614366979, 4.850797600265059, 2.1793549701266692)   
     moving = False
@@ -613,11 +636,8 @@ if __name__ == "__main__":
                 state = 0.5
 
         elif state == 0.5:
-            if moving: continue
-            moving = True
             clear_costmaps
             chassis.move_to(*end_location)
-            moving = False
             if chassis.status_code == 3:
                 say("arrived")
                 state = 1
@@ -629,10 +649,10 @@ if __name__ == "__main__":
             action="find"
             state = 105
         elif state == 105:
+            min_d=99999
             if step == "turn":
                 move(0, 0.2)
             if action == "find":
-                min_d = 9999
                 t_idx = -1
                 result = model(arm_img)[0]
                 if result.boxes is not None and len(result.boxes) > 0:  # found object
@@ -641,58 +661,87 @@ if __name__ == "__main__":
                         score = float(box.conf[0])
                         if score > 0.45:
                             x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-                            cv2.rectangle(arm_img, (x1,y1), (x2,y2), (0,0,255),3)
-                            fcx = (x1+x2)//2
-                            fcy = (y1+y2) //2
-                            t_idx=1
+                            cv2.rectangle(arm_img, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                            
+                            # Keep these for your turning logic later
+                            fcx = (x1 + x2) // 2
+                            fcy = (y1 + y2) // 2
+                            t_idx = 1
+                            
+                            # --- NEW LOGIC: Find the closest non-zero depth within the bounding box ---
+                            # Crop the depth map to the bounding box region
+                            depth_box = arm_dth[y1:y2, x1:x2]
+                            
+                            # Filter out 0 values
+                            valid_depths = depth_box[depth_box > 0]
+                            
+                            if valid_depths.size > 0:
+                                # Get the minimum depth value in this box
+                                box_min_d = np.min(valid_depths)
+                                
+                                # If this box is closer than previous boxes, update min_d
+                                if box_min_d < min_d and box_min_d != 0 and box_min_d>=600:
+                                    min_d = box_min_d
+
                 if t_idx != -1:
-                    _, _, d = get_real_xyz(depth, fcx, fcy, 2)
-                    final_d = d
-                    step = "none"
-                    e = (image.shape[1] // 2) - fcx
-                    v = np.clip(0.001 * e, -0.45, 0.45)
-                    move(0, v)
-                    if abs(e) <= 40:
-                        state=2
-                        step="none"
-                        action="none"
-                        move(0, 0)
-                        time.sleep(0.5)
-                    else:
-                        step = "turn"
+                    # Use the closest valid depth found across the box(es)
+                    final_d = min_d
+                    
+                    if final_d != 9999:  # Ensure a valid depth was actually found
+                        step = "none"
+                        e = (image.shape[1] // 2) - fcx
+                        v = np.clip(0.001 * e, -0.45, 0.45)
+                        move(0, v)
+                        if abs(e) <= 40:
+                            state = 2
+                            move(0, 0)
+                            time.sleep(0.5)
+                        else:
+                            step = "turn"
         elif state == 2:
             _, _, _1yaw = get_odom_pose()
-            distance_vv=depth[h//2][w//2]-1300
-            for iii in range(round((distance_vv) / 100)):
+            distance_vv=final_d-200
+            ffgh=math.ceil(distance_vv/100)
+            for iii in range(ffgh):
                 check_wether_turned_while_moving(_1yaw)
                 move(0.2, 0)
                 time.sleep(0.5)
-            
             move(0,0)
             time.sleep(0.5)
-            move(0.12,0)
+            state = 56
+        if state == 56:
             time.sleep(0.05)
-            turn(5 * np.pi / 180)
+            turn(-8*np.pi/180)
             time.sleep(0.5)
             state = 3
         elif state == 3:
-
             piper.set_gripper(1)
-            piper.move_to_endpoint2(330,200,0,0,0,-np.pi/2,n=100)
-            piper.move_to_endpoint2(330,-320,0,0,0,-np.pi/2,n=100)
+            with open('antony_ws/bucket.json', 'r', encoding='utf-8') as file:
+                data = json.load(file)
+            x = True
+            for i in data:
+                piper.move_joint(i["joints"])
+                if i["gripper"][0]>50000 and x == True:
+                    piper.set_gripper(1,1000)
+                    x = False
+                elif i["gripper"][0]<=50000 and x == False:
+                    piper.set_gripper(0,1000)
+                    x = True
+                print(i)
             piper.set_gripper(0)
+            turn(8*np.pi/180)
+
             _, _, _1yaw = get_odom_pose()
-            turn(-5 * np.pi / 180)
             time.sleep(0.5)
-            for iii in range(round(distance_vv / 100)):
+            for iii in range(ffgh):
                 check_wether_turned_while_moving(_1yaw)
                 move(-0.2, 0)
                 time.sleep(0.5)
-            turn_to(0,0.3)
+            turn_to1(0,0.3)
             time.sleep(0.5)
-            turn(48*np.pi/180)
+            turn(54*np.pi/180)
             _, _, _1yaw = get_odom_pose()
-            for iii in range(round(1900 / 100)):
+            for iii in range(round(2300 / 100)):
                 check_wether_turned_while_moving(_1yaw)
                 move(0.2, 0)
                 time.sleep(0.5)
@@ -704,23 +753,46 @@ if __name__ == "__main__":
         
         elif state == 4:
             # place the clothing on the table
+            with open('antony_ws/out.json', 'r', encoding='utf-8') as file:
+                data = json.load(file)
+            x = True
+            for i in data:
+                piper.move_joint(i["joints"])
+                if i["gripper"][0]>50000 and x == True:
+                    piper.set_gripper(1,1000)
+                    x = False
+                elif i["gripper"][0]<=50000 and x == False:
+                    piper.set_gripper(0,1000)
+                    x = True
+                print(i)
             piper.move_to_endpoint2(0,500,0,0,0,0,n=100)
             time.sleep(0.5)
-            piper.move_to_endpoint2(320,500,0,0,0,0,n=100)
-            turn_to(0,0.4)
+            piper.move_to_endpoint2(320,460,0,0,0,0,n=100)
+            piper.move_to_endpoint(300,360,0,0,0,-1.57/3*2)
+
+            turn_to1(0,0.4)
             time.sleep(0.5)
+            
             move(0.2,0)
             time.sleep(0.5)
             piper.set_gripper(1)
+            piper.move_to_endpoint2(320,460,0,0,0,1.57/2,n=100)
             state = 5
         elif state == 5:
             if moving: continue
             moving = True
-            for i in range(5):
+            for i in range(10):
                 move(-0.2,0)
                 time.sleep(0.5)
             piper.move_to_endpoint2(100,200,0,0,0,0)
             time.sleep(0.5)
+            state = 6.5
+        elif state == 6.5:
+            clear_costmaps
+            chassis.move_to(*end_location)
+            moving = False
+            if chassis.status_code == 3:
+                say("arrived")
             state = 6
         elif state == 6:
             clear_costmaps
@@ -731,8 +803,8 @@ if __name__ == "__main__":
                 time.sleep(0.5)
                 state = 7
         elif state == 7:
-            move(0.05,0)
-            time.sleep(0.035)
+            move(0.16,0)
+            time.sleep(0.05)
             with open('antony_ws/washing_machine.json', 'r', encoding='utf-8') as file:
                 data = json.load(file)
             x = True
@@ -745,15 +817,20 @@ if __name__ == "__main__":
                     piper.set_gripper(0,1000)
                     x = True
                 print(i)
-            for i in range(7):
-                move(-0.2,0)
-                time.sleep(0.5)
             piper.move_to_endpoint2(100,200,0,0,0,0)
+
+            state = 6.55
+        elif state == 6.55:
+            clear_costmaps
+            chassis.move_to(*end_location)
+            moving = False
+            if chassis.status_code == 3:
+                say("arrived")
 
             state = 8
         elif state == 8:
             clear_costmaps
-            chassis.move_to(2.970674933166167, 4.888803384574086, 1.7482325337837898)
+            chassis.move_to (3.0221610513746557, 4.9162521966703885, 1.8346752571159766)
             moving = False
             if chassis.status_code == 3:
                 say("arrived")
@@ -772,9 +849,21 @@ if __name__ == "__main__":
                     piper.set_gripper(0,1000)
                     x = True
                 print(i)
-            for i in range(5):
+            for i in range(12):
                 move(-0.2,0)
                 time.sleep(0.5)
+            state=99999
+        elif state == 99999:
+            clear_costmaps
+            chassis.move_to(1.5,4.64,1.612)
+            moving = False
+            if chassis.status_code == 3:
+                say("arrived")
+            state = 99999999
+        elif state==99999999:
+            piper.move_to_endpoint(350,360,0,0,0,-1.57/3*2)
+            piper.set_gripper(1,1000)
+            state=77787878787
             say("mission end")
 
         cv2.imshow("image", arm_img)
