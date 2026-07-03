@@ -1090,7 +1090,7 @@ if __name__ == "__main__":
             if chassis.status_code == 3:
                 print("arrived")
                 state = 5
-                for iii in range(round(300 / 100)):
+                for iii in range(round(200 / 100)):
                     move(0.2, 0)
                     time.sleep(0.5)
             print(chassis.status_code)
@@ -1106,7 +1106,7 @@ if __name__ == "__main__":
 
                 cx, cy = (p5[0] + p6[0]) // 2, (p5[1] + p6[1]) // 2
                 _, _, d = get_real_xyz(depth, cx, cy, 2)
-                if d >= 2000 or d == 0: continue
+                if d >= 2300 or d == 0: continue
                 if d <= min_d:
                     t_idx, final_d, min_d = i, d, d
 
@@ -1267,7 +1267,7 @@ if __name__ == "__main__":
             if chassis.status_code == 3:
                 print("arrived")
                 state = 15
-                for iii in range(round(300 / 100)):
+                for iii in range(round(200 / 100)):
                     move(0.2, 0)
                     time.sleep(0.5)
             print(chassis.status_code)
@@ -1285,7 +1285,7 @@ if __name__ == "__main__":
 
                 cx, cy = (p5[0] + p6[0]) // 2, (p5[1] + p6[1]) // 2
                 _, _, d = get_real_xyz(depth, cx, cy, 2)
-                if d >= 2000 or d == 0: continue
+                if d >= 2300 or d == 0: continue
                 if d <= min_d:
                     t_idx, final_d, min_d = i, d, d
 
