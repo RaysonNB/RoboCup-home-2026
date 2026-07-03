@@ -610,7 +610,6 @@ if __name__ == "__main__":
             print(door_dist)
             if door_dist >= 1500 or door_dist == 0: # door opened
                 say("door opened, ready to move")
-               
                 state = 0.5
 
         elif state == 0.5:
@@ -653,11 +652,12 @@ if __name__ == "__main__":
                     e = (image.shape[1] // 2) - fcx
                     v = np.clip(0.001 * e, -0.45, 0.45)
                     move(0, v)
-                    if abs(e) <= 45:
+                    if abs(e) <= 40:
                         state=2
                         step="none"
                         action="none"
                         move(0, 0)
+                        time.sleep(0.5)
                     else:
                         step = "turn"
         elif state == 2:
@@ -667,10 +667,13 @@ if __name__ == "__main__":
                 check_wether_turned_while_moving(_1yaw)
                 move(0.2, 0)
                 time.sleep(0.5)
+            
             move(0,0)
             time.sleep(0.5)
             move(0.12,0)
             time.sleep(0.05)
+            turn(8 * np.pi / 180)
+            time.sleep(0.5)
             state = 3
         elif state == 3:
 
@@ -679,7 +682,8 @@ if __name__ == "__main__":
             piper.move_to_endpoint2(330,-320,0,0,0,-np.pi/2,n=100)
             piper.set_gripper(0)
             _, _, _1yaw = get_odom_pose()
-
+            turn(-8 * np.pi / 180)
+            time.sleep(0.5)
             for iii in range(round(distance_vv / 100)):
                 check_wether_turned_while_moving(_1yaw)
                 move(-0.2, 0)
@@ -688,7 +692,7 @@ if __name__ == "__main__":
             time.sleep(0.5)
             turn(48*np.pi/180)
             _, _, _1yaw = get_odom_pose()
-            for iii in range(round(1900 / 100)):
+            for iii in range(round(1800 / 100)):
                 check_wether_turned_while_moving(_1yaw)
                 move(0.2, 0)
                 time.sleep(0.5)
@@ -700,13 +704,13 @@ if __name__ == "__main__":
         
         elif state == 4:
             # place the clothing on the table
-            move(-0.2,0)
-            time.sleep(0.05)
             piper.move_to_endpoint2(100,500,0,0,0,0,n=100)
             time.sleep(0.5)
-            piper.move_to_endpoint2(320,460,0,0,0,0,n=100)
-
+            piper.move_to_endpoint2(320,500,0,0,0,0,n=100)
             turn_to(0,0.4)
+            time.sleep(0.5)
+            move(0.2,0)
+            time.sleep(0.5)
             piper.set_gripper(1)
             state = 5
         elif state == 5:
@@ -723,11 +727,12 @@ if __name__ == "__main__":
             chassis.move_to(*washing_machine)
             moving = False
             if chassis.status_code == 3:
-                say("navigation done")
+                say("arrived")
+                time.sleep(0.5)
                 state = 7
         elif state == 7:
-            move(0.07,0)
-            time.sleep(0.05)
+            move(0.05,0)
+            time.sleep(0.035)
             with open('antony_ws/washing_machine.json', 'r', encoding='utf-8') as file:
                 data = json.load(file)
             x = True
@@ -750,7 +755,7 @@ if __name__ == "__main__":
             chassis.move_to(2.970674933166167, 4.888803384574086, 1.7482325337837898)
             moving = False
             if chassis.status_code == 3:
-                say("navigation done")
+                say("arrived")
                 state = 9
         elif state == 9:
 
